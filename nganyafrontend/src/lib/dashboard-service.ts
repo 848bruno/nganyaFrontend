@@ -14,15 +14,32 @@ import type {
   ApiResponse,
 } from './types'
 
-class RideshareService {
+class RideshareService {// Add this to your RideshareService class
+async getAdminStats() {
+  try {
+    const res = await api.get('/admin/stats');
+    return res.data;
+  } catch (error) {
+    console.error('Error fetching admin stats:', error);
+    return {
+      totalUsers: 0,
+      activeDrivers: 0,
+      totalVehicles: 0,
+      monthlyRevenue: 0,
+      totalRides: 0,
+      totalBookings: 0,
+      completionRate: 0,
+      averageRating: 0,
+      supportTickets: 0,
+    };
+  }
+}
+
+  
   // USERS
   async getUsers(params?: { page?: number; limit?: number; role?: string }) {
-    const res = await api.get<ApiResponse<PaginatedResponse<User>>>('/users', {
-      params,
-      
-    })
-    console.log('FULL USER RESPONSE', res.data);
-    return res.data?.data?? {item :[], total: 0}
+    const res = await api.get<PaginatedResponse<User>>('/users', { params }); // Remove ApiResponse wrapper
+    return res.data ?? { items: [], total: 0 };
   }
 
   async createUser(data: Partial<User>) {
