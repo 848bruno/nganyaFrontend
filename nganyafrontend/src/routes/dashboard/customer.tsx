@@ -1,13 +1,18 @@
-import { MapView } from '@/components/MapView'
-import { BookingPanel } from '@/components/BookingPanel'
-import { DashboardSidebar } from '@/components/dashboard-sidebar'
-import { useRouter, createFileRoute } from '@tanstack/react-router'
+// src/pages/customer-dashboard.tsx
+import { MapView } from "@/components/MapView";
+import { BookingPanel } from "@/components/BookingPanel";
+import { DashboardSidebar } from "@/components/dashboard-sidebar";
+import { useSearch, createFileRoute } from "@tanstack/react-router"; // Use useSearch for route data
+import { useState } from "react";
+
 
 export const Route = createFileRoute('/dashboard/customer')({
-  component: Customer,
+  component: CustomerDashboard,
 })
-export default function Customer() {
-  const navigate = useRouter()
+
+export function CustomerDashboard() {
+  // State to hold the route data from the booking panel
+  const [routeData, setRouteData] = useState(null);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -17,11 +22,13 @@ export default function Customer() {
         <div className="h-screen flex relative">
           {/* Map View - Full screen on mobile, left side on desktop */}
           <div className="flex-1 relative">
-            <MapView />
+            {/* Pass routeData to MapView */}
+            <MapView routeData={routeData} />
 
             {/* Mobile booking panel - slides up from bottom */}
             <div className="absolute bottom-0 left-0 right-0 lg:hidden">
-              <BookingPanel />
+              {/* Pass setRouteData to BookingPanel */}
+              <BookingPanel setRouteData={setRouteData} />
             </div>
 
             {/* Status bar and quick actions for mobile */}
@@ -73,7 +80,7 @@ export default function Customer() {
 
                 {/* Get Started for new users */}
                 <button
-                  onClick={() => navigate('/')}
+                  onClick={() => {}} // No longer using useNavigate to navigate to "/"
                   className="w-full p-2 bg-gradient-to-r from-primary to-blue-600 text-white rounded-xl font-medium text-sm hover:shadow-md transition-all"
                 >
                   New User? Get Started →
@@ -85,11 +92,12 @@ export default function Customer() {
           {/* Desktop booking panel - fixed right sidebar */}
           <div className="hidden lg:block w-96 border-l border-border bg-background">
             <div className="p-4 h-full">
-              <BookingPanel />
+              {/* Pass setRouteData to BookingPanel */}
+              <BookingPanel setRouteData={setRouteData} />
             </div>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

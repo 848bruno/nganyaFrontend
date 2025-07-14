@@ -71,7 +71,7 @@ const sidebarItems = {
     },
   ],
   admin: [
-    { icon: Home, label: "home", href: "/Delivery" },
+    { icon: Home, label: "home", href: "/" },
     { icon: Users, label: "Users", href: "/User" },
     { icon: Car, label: "Drivers", href: "/admin/drivers" },
     { icon: Truck, label: "Vehicles", href: "/vehicles" },
@@ -118,25 +118,10 @@ export function DashboardSidebar({ userType }: DashboardSidebarProps) {
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="p-6 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-r from-primary to-primary/80 rounded-xl flex items-center justify-center">
-            <MapPin className="w-5 h-5 text-primary-foreground" />
-          </div>
-          {!collapsed && (
-            <div>
-              <h1 className="text-xl font-bold">RideFlow</h1>
-              <p className="text-xs text-muted-foreground capitalize">
-                {userType} Portal
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
+     
 
       {/* User Info */}
-      <div className="p-6 border-b border-border">
+      {/* <div className="p-6 border-b border-border">
         <div className="flex items-center gap-3">
           <Avatar className="w-10 h-10">
             <AvatarImage src="/placeholder.svg" />
@@ -165,7 +150,7 @@ export function DashboardSidebar({ userType }: DashboardSidebarProps) {
             </div>
           )}
         </div>
-      </div>
+      </div> */}
 
       {/* Navigation */}
       <div className="flex-1 p-4 space-y-2 overflow-y-auto">
@@ -208,7 +193,7 @@ export function DashboardSidebar({ userType }: DashboardSidebarProps) {
       <Separator />
 
       {/* Footer Actions */}
-      <div className="p-4 space-y-2">
+      <div className="p-4 space-y-1">
         <Link
           to="/profile"
           className={cn(

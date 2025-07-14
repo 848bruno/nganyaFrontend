@@ -1,4 +1,4 @@
-import { useState } from 'react';
+// import { useState } from 'react';
 import { useSort } from '@table-library/react-table-library/sort';
 import { CompactTable } from '@table-library/react-table-library/compact';
 import { useTheme } from '@table-library/react-table-library/theme';
@@ -8,6 +8,7 @@ import { useUsers, useDeleteUser } from '@/useHooks';
 import type { User } from '@/lib/types';
 import EditUserModal from '@/components/modalForm/EditUserModal';
 import Pagination from '@/components/Pagination';
+import { useState } from 'react';
 
 export default function UsersList() {
   // State management

@@ -1,134 +1,107 @@
+// src/components/MapView.tsx
+import React, { useEffect, useRef } from "react";
 import { Car, Navigation2, Clock, MapPin, Zap, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import L from "leaflet"; // Keep this import for L.LatLngTuple and other Leaflet types/utilities
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 
-export function MapView() {
+
+interface MapViewProps {
+  routeData: {
+    start: { lat: number; lon: number };
+    end: { lat: number; lon: number };
+    geometry: {
+      type: string;
+      coordinates: [number, number][];
+    };
+    distance: number;
+    duration: number;
+    instructions: any[];
+  } | null;
+}
+
+// Component to update map view based on route data
+function MapUpdater({ routeData }: MapViewProps) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (routeData) {
+      const startLatLon: L.LatLngTuple = [routeData.start.lat, routeData.start.lon];
+      const endLatLon: L.LatLngTuple = [routeData.end.lat, routeData.end.lon];
+
+      // Fit map to bounds of start and end points
+      const bounds = L.latLngBounds([startLatLon, endLatLon]);
+      map.fitBounds(bounds, { padding: [50, 50] });
+    }
+  }, [routeData, map]);
+
+  return null;
+}
+
+export function MapView({ routeData }: MapViewProps) {
+  // Default map center (e.g., Nairobi, Kenya)
+  const defaultCenter: L.LatLngTuple = [1.2921, 36.8219];
+  const defaultZoom = 13;
+
+  const pathCoordinates: L.LatLngTuple[] = routeData?.geometry.coordinates.map(
+    (coord) => [coord[1], coord[0]], // OSRM returns [lon, lat], Leaflet expects [lat, lon]
+  ) || [];
+
   return (
     <div className="relative w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 overflow-hidden">
-      {/* Map Background with Roads */}
-      <div className="absolute inset-0">
-        {/* Main roads */}
-        <div className="absolute inset-0">
-          <div className="absolute top-1/3 left-0 right-0 h-2 bg-gray-300 opacity-60"></div>
-          <div className="absolute top-2/3 left-0 right-0 h-1 bg-gray-300 opacity-40"></div>
-          <div className="absolute left-1/4 top-0 bottom-0 w-1 bg-gray-300 opacity-40"></div>
-          <div className="absolute left-3/4 top-0 bottom-0 w-2 bg-gray-300 opacity-60"></div>
-        </div>
+      <MapContainer
+        center={defaultCenter}
+        zoom={defaultZoom}
+        scrollWheelZoom={true}
+        className="h-full w-full z-0"
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
 
-        {/* Grid pattern for city blocks */}
-        <svg className="w-full h-full opacity-5" viewBox="0 0 100 100">
-          <defs>
-            <pattern
-              id="cityGrid"
-              patternUnits="userSpaceOnUse"
-              width="10"
-              height="10"
-            >
-              <path
-                d="M 0,5 L 10,5 M 5,0 L 5,10"
-                stroke="#374151"
-                strokeWidth="0.3"
-              />
-            </pattern>
-          </defs>
-          <rect width="100" height="100" fill="url(#cityGrid)" />
-        </svg>
-      </div>
+        {routeData && (
+          <>
+            <Marker position={[routeData.start.lat, routeData.start.lon]} />
+            <Marker position={[routeData.end.lat, routeData.end.lon]} />
+            <Polyline
+              positions={pathCoordinates}
+              color="blue"
+              weight={5}
+              opacity={0.7}
+            />
+            <MapUpdater routeData={routeData} />
+          </>
+        )}
 
-      {/* Mock vehicles on map */}
-      <div className="absolute inset-0">
-        {/* Available Vehicle 1 - Economy */}
-        <div className="absolute top-[30%] left-[35%] transform -translate-x-1/2 -translate-y-1/2">
-          <div className="relative group">
-            <div className="w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow">
-              <Car className="w-7 h-7 text-white" />
-            </div>
-            <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-            </div>
-            {/* Tooltip */}
-            <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-              John • Economy • $12
-            </div>
-          </div>
-        </div>
+        {/* Mock vehicles and current location pins (keep for visual consistency) */}
+        {/* These mock markers can stay, as their positions are hardcoded. */}
+        {/* <Marker position={[1.295, 36.81]}>
+          <L.Popup>John • Economy • $12</L.Popup>
+        </Marker>
 
-        {/* Available Vehicle 2 - Premium */}
-        <div className="absolute top-[55%] left-[65%] transform -translate-x-1/2 -translate-y-1/2">
-          <div className="relative group">
-            <div className="w-14 h-14 bg-accent rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow">
-              <Car className="w-7 h-7 text-white" />
-            </div>
-            <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-            </div>
-            <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-              Sarah • Premium • $18
-            </div>
-          </div>
-        </div>
+        <Marker position={[1.28, 36.83]}>
+          <L.Popup>Sarah • Premium • $18</L.Popup>
+        </Marker>
 
-        {/* Busy Vehicle */}
-        <div className="absolute top-[25%] left-[70%] transform -translate-x-1/2 -translate-y-1/2">
-          <div className="relative group">
-            <div className="w-12 h-12 bg-gray-400 rounded-full flex items-center justify-center shadow-lg opacity-60">
-              <Car className="w-6 h-6 text-white" />
-            </div>
-            <div className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
-              <Clock className="w-3 h-3 text-white" />
-            </div>
-            <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-              Mike • Busy
-            </div>
-          </div>
-        </div>
+        <Marker position={[1.30, 36.85]}>
+          <L.Popup>Mike • Busy</L.Popup>
+        </Marker>
 
-        {/* Luxury Vehicle */}
-        <div className="absolute top-[75%] left-[25%] transform -translate-x-1/2 -translate-y-1/2">
-          <div className="relative group">
-            <div className="w-16 h-16 bg-gradient-to-r from-purple-600 to-purple-800 rounded-full flex items-center justify-center shadow-xl">
-              <Car className="w-8 h-8 text-white" />
-            </div>
-            <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-            </div>
-            <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-              David • Luxury • $35
-            </div>
-          </div>
-        </div>
+        <Marker position={[1.27, 36.80]}>
+          <L.Popup>David • Luxury • $35</L.Popup>
+        </Marker>
 
-        {/* Shared Ride */}
-        <div className="absolute top-[45%] left-[40%] transform -translate-x-1/2 -translate-y-1/2">
-          <div className="relative group">
-            <div className="w-14 h-14 bg-secondary rounded-full flex items-center justify-center shadow-lg">
-              <Users className="w-7 h-7 text-white" />
-            </div>
-            <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-              <span className="text-white text-xs font-bold">2</span>
-            </div>
-            <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-              Shared Ride • 2 seats • $6
-            </div>
-          </div>
-        </div>
+        <Marker position={[1.285, 36.82]}>
+          <L.Popup>Shared Ride • 2 seats • $6</L.Popup>
+        </Marker>
 
-        {/* Current location pin */}
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-          <div className="relative">
-            <div className="w-8 h-8 bg-red-500 rounded-full shadow-lg animate-bounce flex items-center justify-center">
-              <MapPin className="w-4 h-4 text-white" />
-            </div>
-            <div className="absolute inset-0 w-8 h-8 bg-red-500 rounded-full animate-ping opacity-75"></div>
-            <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-red-500 text-white text-xs px-2 py-1 rounded">
-              You are here
-            </div>
-          </div>
-        </div>
-      </div>
+        <Marker position={[1.2921, 36.8219]} /> */}
+      </MapContainer>
 
       {/* Map controls */}
-      <div className="absolute bottom-6 right-6 flex flex-col gap-2">
+      <div className="absolute bottom-6 right-6 flex flex-col gap-2 z-10">
         <Button size="icon" variant="outline" className="bg-white shadow-lg">
           <Navigation2 className="w-4 h-4" />
         </Button>
