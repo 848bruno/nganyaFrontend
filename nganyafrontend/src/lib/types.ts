@@ -7,19 +7,48 @@ export interface User {
   phone?: string;
   createdAt: Date;
   updatedAt: Date;
+  firstName:string;
+  lastName:string;
+  
 }
+
+// --- Vehicle Enums ---
+export enum VehicleType {
+  Sedan = "sedan",
+  SUV = "suv",
+  Luxury = "luxury",
+  Van = "van",
+  Bike = "bike",
+}
+
+export enum VehicleStatus {
+  Available = "available",
+  InUse = "in_use",
+  Maintenance = "maintenance",
+}
+// --- End Vehicle Enums ---
 
 // Vehicle Types
 export interface Vehicle {
   id: string;
   licensePlate: string;
-  type: "sedan" | "suv" | "luxury" | "van" | "bike";
-  status: "available" | "in_use" | "maintenance";
+  type: VehicleType; // Using the enum here
+  status: VehicleStatus; // Using the enum here
   model: string;
   year: number;
   createdAt: Date;
   updatedAt: Date;
 }
+
+// --- Driver Enum ---
+export enum DriverStatus {
+  Active = "active",
+  Inactive = "inactive",
+  OnDuty = "on_duty",
+  OffDuty = "off_duty",
+  Suspended = "suspended",
+}
+// --- End Driver Enum ---
 
 // Driver Types
 export interface Driver {
@@ -30,10 +59,51 @@ export interface Driver {
   rating: number;
   vehicleId?: string;
   vehicle?: Vehicle;
+  // ✨ ADDED: Driver Status property
+  status: DriverStatus; // Add this line
   createdAt: Date;
   updatedAt: Date;
 }
 
+// ... (existing imports and interfaces)
+
+export interface DriverDashboardStats {
+  totalRidesCompleted: number;
+  totalRevenueEarned: number;
+  averageRating: number;
+  totalHoursOnline: number;
+  upcomingBookings: number;
+  todayEarnings: number;
+  weeklyEarnings: number;
+  monthlyEarnings: number;
+  totalRides: number; 
+   rating: number,
+    completionRate: number,
+    hoursOnline: number,
+    activeRides: number; // Total number of rides currently active,
+  totalDeliveries: number;
+  totalDistanceCovered: number; // Total distance covered by the driver
+  totalTimeSpent: number; // Total time spent on rides and deliveries
+  totalCancelledRides: number; // Total number of rides cancelled by the driver
+  totalCancelledDeliveries: number; // Total number of deliveries cancelled by the driver
+  totalActiveRides: number; // Total number of rides currently active
+  totalActiveDeliveries: number; // Total number of deliveries currently active
+  totalFeedbackReceived: number; // Total number of feedback received from users
+  averageResponseTime: number; // Average time taken by the driver to respond to ride or delivery requests
+  totalSupportTickets: number; // Total number of support tickets raised by the driver
+  totalSupportTicketsResolved: number; // Total number of support tickets resolved by the driver
+  totalSupportTicketsPending: number; // Total number of support tickets pending resolution
+  // Add any other relevant stats for a driver dashboard
+}
+
+
+export enum DeliveryStatus {
+  Pending = 'pending',
+  PickedUp = 'picked_up',
+  InTransit = 'in_transit',
+  Delivered = 'delivered',
+  Cancelled = 'cancelled',
+}
 // Location Type
 export interface Location {
   lat: number;
@@ -226,7 +296,32 @@ export interface RegisterDriverRequest {
 
 export interface CreateVehicleRequest {
   licensePlate: string;
-  type: "sedan" | "suv" | "luxury" | "van" | "bike";
+  type: VehicleType; // Using the enum here
   model: string;
   year: number;
+}
+
+
+// export interface PaginatedResponse<T> {
+//   items: T[]; 
+//   total: number;
+//   data: T[]; 
+//   page: number; 
+//   limit: number; 
+//   totalPages: number; }
+
+export interface CreateUserRequest {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  role: 'admin' | 'driver' | 'rider'; // Or more specific roles as needed
+}
+
+export interface CreateVehicleRequest {
+  licensePlate: string;
+  model: string;
+  year: number;
+  type: VehicleType;
+  status: VehicleStatus;
 }

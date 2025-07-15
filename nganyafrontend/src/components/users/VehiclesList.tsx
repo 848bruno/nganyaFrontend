@@ -1,31 +1,33 @@
+// src/components/VehiclesList.tsx
 import { useState } from 'react';
 import { useSort } from '@table-library/react-table-library/sort';
 import { CompactTable } from '@table-library/react-table-library/compact';
 import { useTheme } from '@table-library/react-table-library/theme';
 import { getTheme } from '@table-library/react-table-library/baseline';
 import { Edit, Trash2, Plus, Search } from 'lucide-react';
-import { useUsers, useDeleteUser } from '@/useHooks';
-import type { User } from '@/lib/types';
-import EditUserModal from '@/components/modalForm/EditUserModal';
+import { useVehicles, useDeleteVehicle } from '@/useHooks';
+import  { VehicleType, VehicleStatus, type Vehicle } from '@/lib/types'; // Import VehicleType and VehicleStatus
+import EditVehicleModal from '@/components/modalForm/EditVehicleModal'; // Import the new modal
 import Pagination from '@/components/Pagination';
-import { DashboardSidebar } from '../dashboard-sidebar';
+import { DashboardSidebar } from '../dashboard-sidebar'; // Assuming sidebar is in the same folder or adjust path
 
-export default function UsersList() {
+export default function VehiclesList() {
   // State management
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string | undefined>(undefined);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [creatingUser, setCreatingUser] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<VehicleType | undefined>(undefined);
+  const [statusFilter, setStatusFilter] = useState<VehicleStatus | undefined>(undefined);
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [creatingVehicle, setCreatingVehicle] = useState(false);
 
-  // Fetch users
-  const { data, isLoading, isError, error } = useUsers(page, limit, roleFilter, searchTerm);
-  const users = data?.items || [];
+  // Fetch vehicles
+  const { data, isLoading, isError, error } = useVehicles(page, limit, typeFilter, statusFilter, searchTerm);
+  const vehicles = data?.items || [];
   const totalItems = data?.total || 0;
 
   // Delete mutation
-  const deleteUser = useDeleteUser();
+  const deleteVehicle = useDeleteVehicle();
 
   // Table theme
   const theme = useTheme([
@@ -38,7 +40,7 @@ export default function UsersList() {
   ]);
 
   // Table data
-  const tableData = { nodes: users };
+  const tableData = { nodes: vehicles };
 
   // Sort configuration
   const sort = useSort(
@@ -46,9 +48,11 @@ export default function UsersList() {
     {},
     {
       sortFns: {
-        ID: (array) => array.sort((a, b) => a.id.localeCompare(b.id)),
-        NAME: (array) => array.sort((a, b) => a.name.localeCompare(b.name)),
-        EMAIL: (array) => array.sort((a, b) => a.email.localeCompare(b.email)),
+        LICENSE_PLATE: (array) => array.sort((a, b) => a.licensePlate.localeCompare(b.licensePlate)),
+        MODEL: (array) => array.sort((a, b) => a.model.localeCompare(b.model)),
+        YEAR: (array) => array.sort((a, b) => a.year - b.year),
+        TYPE: (array) => array.sort((a, b) => a.type.localeCompare(b.type)),
+        STATUS: (array) => array.sort((a, b) => a.status.localeCompare(b.status)),
         CREATED: (array) => array.sort((a, b) => 
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         ),
@@ -59,61 +63,71 @@ export default function UsersList() {
   // Table columns
   const COLUMNS = [
     { 
-      label: 'ID', 
-      renderCell: (user) => <span className="font-mono text-xs">{user.id}</span>,
-      sort: { sortKey: 'ID' } 
+      label: 'License Plate', 
+      renderCell: (vehicle:any) => <span className="font-mono text-xs">{vehicle.licensePlate}</span>,
+      sort: { sortKey: 'LICENSE_PLATE' } 
     },
     { 
-      label: 'Name', 
-      renderCell: (user) => user.name,
-      sort: { sortKey: 'NAME' } 
+      label: 'Model', 
+      renderCell: (vehicle:any) => vehicle.model,
+      sort: { sortKey: 'MODEL' } 
     },
     { 
-      label: 'Email', 
-      renderCell: (user) => <a href={`mailto:${user.email}`} className="text-blue-600 hover:underline">{user.email}</a>,
-      sort: { sortKey: 'EMAIL' } 
+      label: 'Year', 
+      renderCell: (vehicle:any) => vehicle.year,
+      sort: { sortKey: 'YEAR' } 
     },
     { 
-      label: 'Phone', 
-      renderCell: (user) => user.phone || <span className="text-gray-400">N/A</span>
-    },
-    { 
-      label: 'Role', 
-      renderCell: (user) => (
+      label: 'Type', 
+      renderCell: (vehicle:any) => (
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-          user.role === 'admin' ? 'bg-red-100 text-red-800' :
-          user.role === 'driver' ? 'bg-blue-100 text-blue-800' :
-          'bg-green-100 text-green-800'
+          vehicle.type === VehicleType.Luxury ? 'bg-yellow-100 text-yellow-800' :
+          vehicle.type === VehicleType.SUV ? 'bg-purple-100 text-purple-800' :
+          'bg-indigo-100 text-indigo-800'
         }`}>
-          {user.role}
+          {vehicle.type}
         </span>
-      )
+      ),
+      sort: { sortKey: 'TYPE' } 
+    },
+    { 
+      label: 'Status', 
+      renderCell: (vehicle:any) => (
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+          vehicle.status === VehicleStatus.Available ? 'bg-green-100 text-green-800' :
+          vehicle.status === VehicleStatus.InUse ? 'bg-blue-100 text-blue-800' :
+          'bg-red-100 text-red-800'
+        }`}>
+          {vehicle.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+        </span>
+      ),
+      sort: { sortKey: 'STATUS' } 
     },
     {
       label: 'Created',
-      renderCell: (user) => new Date(user.createdAt).toLocaleDateString(),
+      renderCell: (vehicle:any) => new Date(vehicle.createdAt).toLocaleDateString(),
       sort: { sortKey: 'CREATED' }
     },
     {
       label: 'Actions',
-      renderCell: (user) => (
+      renderCell: (vehicle:any) => (
         <div className="flex gap-2">
           <button
-            onClick={() => setEditingUser(user)}
+            onClick={() => setEditingVehicle(vehicle)}
             className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded text-xs"
-            title="Edit user"
+            title="Edit vehicle"
           >
             <Edit size={14} />
           </button>
           <button
             onClick={() => {
-              if (confirm(`Are you sure you want to delete ${user.name}?`)) {
-                deleteUser.mutate(user.id);
+              if (confirm(`Are you sure you want to delete vehicle ${vehicle.licensePlate} (${vehicle.model})?`)) {
+                deleteVehicle.mutate(vehicle.id);
               }
             }}
             className="flex items-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded text-xs"
-            disabled={deleteUser.isPending}
-            title="Delete user"
+            disabled={deleteVehicle.isPending}
+            title="Delete vehicle"
           >
             <Trash2 size={14} />
           </button>
@@ -128,17 +142,17 @@ export default function UsersList() {
   const totalPages = Math.ceil(totalItems / limit);
 
   return (
-    <div className="flex min-h-screen bg-gray-100"> {/* Added flex container */}
+    <div className="flex min-h-screen bg-gray-100">
       <DashboardSidebar userType="admin" />
       
-      <div className="flex-1 p-6 overflow-y-auto"> {/* Content area, takes remaining space */}
-        <div className="bg-white rounded-lg shadow"> {/* Original styling for the content */}
+      <div className="flex-1 p-6 overflow-y-auto">
+        <div className="bg-white rounded-lg shadow">
           {/* Header */}
           <div className="p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <h2 className="text-xl font-bold text-gray-800">Users</h2>
+              <h2 className="text-xl font-bold text-gray-800">Vehicles</h2>
               <p className="text-sm text-gray-600">
-                Showing {startIndex} to {endIndex} of {totalItems} users
+                Showing {startIndex} to {endIndex} of {totalItems} vehicles
               </p>
             </div>
             
@@ -147,7 +161,7 @@ export default function UsersList() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search users..."
+                  placeholder="Search vehicles..."
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
@@ -158,25 +172,43 @@ export default function UsersList() {
               </div>
               
               <select
-                value={roleFilter || ''}
+                value={typeFilter || ''}
                 onChange={(e) => {
-                  setRoleFilter(e.target.value || undefined);
+                  setTypeFilter(e.target.value as VehicleType || undefined);
                   setPage(1);
                 }}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="">All Roles</option>
-                <option value="customer">Customer</option>
-                <option value="driver">Driver</option>
-                <option value="admin">Admin</option>
+                <option value="">All Types</option>
+                {Object.values(VehicleType).map((type) => (
+                  <option key={type} value={type}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={statusFilter || ''}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as VehicleStatus || undefined);
+                  setPage(1);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">All Statuses</option>
+                {Object.values(VehicleStatus).map((status) => (
+                  <option key={status} value={status}>
+                    {status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                  </option>
+                ))}
               </select>
               
               <button
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-                onClick={() => setCreatingUser(true)}
+                onClick={() => setCreatingVehicle(true)}
               >
                 <Plus size={18} />
-                Add User
+                Add Vehicle
               </button>
             </div>
           </div>
@@ -196,7 +228,7 @@ export default function UsersList() {
           {/* Error state */}
           {isError && (
             <div className="p-6 bg-red-50 text-red-700 rounded-lg">
-              <h3 className="font-medium">Error loading users</h3>
+              <h3 className="font-medium">Error loading vehicles</h3>
               <p className="text-sm mt-1">{error.message || 'Please try again later'}</p>
               <button 
                 onClick={() => window.location.reload()}
@@ -208,13 +240,14 @@ export default function UsersList() {
           )}
 
           {/* Empty state */}
-          {!isLoading && !isError && users.length === 0 && (
+          {!isLoading && !isError && vehicles.length === 0 && (
             <div className="p-12 text-center">
-              <div className="text-gray-400 mb-2">No users found</div>
+              <div className="text-gray-400 mb-2">No vehicles found</div>
               <button
                 onClick={() => {
                   setSearchTerm('');
-                  setRoleFilter(undefined);
+                  setTypeFilter(undefined);
+                  setStatusFilter(undefined);
                   setPage(1);
                 }}
                 className="text-blue-600 hover:text-blue-800 text-sm"
@@ -225,7 +258,7 @@ export default function UsersList() {
           )}
 
           {/* Data table */}
-          {!isLoading && !isError && users.length > 0 && (
+          {!isLoading && !isError && vehicles.length > 0 && (
             <>
               <div className="overflow-x-auto">
                 <CompactTable
@@ -249,27 +282,29 @@ export default function UsersList() {
               </div>
             </>
           )}
-        </div> {/* End of bg-white rounded-lg shadow div */}
-      </div> {/* End of flex-1 p-6 overflow-y-auto div */}
+        </div>
+      </div>
 
       {/* Modals */}
-      {editingUser && (
-        <EditUserModal 
-          user={editingUser}
-          onClose={() => setEditingUser(null)}
+      {editingVehicle && (
+        <EditVehicleModal 
+          vehicle={editingVehicle}
+          onClose={() => setEditingVehicle(null)}
           onSave={() => {
-            setEditingUser(null);
-            // You might want to invalidate queries here
+            setEditingVehicle(null);
+            // Invalidate queries to refetch data after save
+            // Example: queryClient.invalidateQueries({ queryKey: ['vehicles'] });
           }}
         />
       )}
       
-      {creatingUser && (
-        <EditUserModal 
-          onClose={() => setCreatingUser(false)}
+      {creatingVehicle && (
+        <EditVehicleModal 
+          onClose={() => setCreatingVehicle(false)}
           onSave={() => {
-            setCreatingUser(false);
-            // Invalidate queries or refetch data
+            setCreatingVehicle(false);
+            // Invalidate queries to refetch data after save
+            // Example: queryClient.invalidateQueries({ queryKey: ['vehicles'] });
           }}
         />
       )}

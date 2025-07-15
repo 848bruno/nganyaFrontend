@@ -1,31 +1,32 @@
+// src/components/DriversList.tsx
 import { useState } from 'react';
 import { useSort } from '@table-library/react-table-library/sort';
 import { CompactTable } from '@table-library/react-table-library/compact';
 import { useTheme } from '@table-library/react-table-library/theme';
 import { getTheme } from '@table-library/react-table-library/baseline';
-import { Edit, Trash2, Plus, Search } from 'lucide-react';
-import { useUsers, useDeleteUser } from '@/useHooks';
-import type { User } from '@/lib/types';
-import EditUserModal from '@/components/modalForm/EditUserModal';
+import { Edit, Trash2, Plus, Search, Star } from 'lucide-react';
+import { useDrivers, useDeleteDriver } from '@/useHooks'; // Import driver hooks
+import type { Driver } from '@/lib/types'; // Import Driver type
+import EditDriverModal from '@/components/modalForm/EditDriverModal'; // Import the new modal
 import Pagination from '@/components/Pagination';
-import { DashboardSidebar } from '../dashboard-sidebar';
+import { DashboardSidebar } from '../dashboard-sidebar'; // Assuming sidebar is in the same folder or adjust path
 
-export default function UsersList() {
+export default function DriversList() {
   // State management
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string | undefined>(undefined);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [creatingUser, setCreatingUser] = useState(false);
+  // No typeFilter or statusFilter for drivers based on provided entity, add if needed
+  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [creatingDriver, setCreatingDriver] = useState(false);
 
-  // Fetch users
-  const { data, isLoading, isError, error } = useUsers(page, limit, roleFilter, searchTerm);
-  const users = data?.items || [];
+  // Fetch drivers
+  const { data, isLoading, isError, error } = useDrivers(page, limit, searchTerm);
+  const drivers = data?.items || [];
   const totalItems = data?.total || 0;
 
   // Delete mutation
-  const deleteUser = useDeleteUser();
+  const deleteDriver = useDeleteDriver();
 
   // Table theme
   const theme = useTheme([
@@ -38,7 +39,7 @@ export default function UsersList() {
   ]);
 
   // Table data
-  const tableData = { nodes: users };
+  const tableData = { nodes: drivers };
 
   // Sort configuration
   const sort = useSort(
@@ -46,10 +47,11 @@ export default function UsersList() {
     {},
     {
       sortFns: {
-        ID: (array) => array.sort((a, b) => a.id.localeCompare(b.id)),
-        NAME: (array) => array.sort((a, b) => a.name.localeCompare(b.name)),
-        EMAIL: (array) => array.sort((a, b) => a.email.localeCompare(b.email)),
-        CREATED: (array) => array.sort((a, b) => 
+        NAME: (array) => array.sort((a, b) => (a.user?.firstName || '').localeCompare(b.user?.firstName || '')),
+        LICENSE_NUMBER: (array) => array.sort((a, b) => a.licenseNumber.localeCompare(b.licenseNumber)),
+        VEHICLE: (array) => array.sort((a, b) => (a.vehicle?.model || '').localeCompare(b.vehicle?.model || '')),
+        RATING: (array) => array.sort((a, b) => a.rating - b.rating),
+        CREATED: (array) => array.sort((a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         ),
       },
@@ -58,62 +60,60 @@ export default function UsersList() {
 
   // Table columns
   const COLUMNS = [
-    { 
-      label: 'ID', 
-      renderCell: (user) => <span className="font-mono text-xs">{user.id}</span>,
-      sort: { sortKey: 'ID' } 
+    {
+      label: 'Driver Name',
+      renderCell: (driver: Driver) => `${driver.user?.firstName || 'N/A'} ${driver.user?.lastName || ''}`,
+      sort: { sortKey: 'NAME' }
     },
-    { 
-      label: 'Name', 
-      renderCell: (user) => user.name,
-      sort: { sortKey: 'NAME' } 
+    {
+      label: 'Email',
+      renderCell: (driver: Driver) => driver.user?.email || 'N/A',
     },
-    { 
-      label: 'Email', 
-      renderCell: (user) => <a href={`mailto:${user.email}`} className="text-blue-600 hover:underline">{user.email}</a>,
-      sort: { sortKey: 'EMAIL' } 
+    {
+      label: 'License Number',
+      renderCell: (driver: Driver) => <span className="font-mono text-xs">{driver.licenseNumber}</span>,
+      sort: { sortKey: 'LICENSE_NUMBER' }
     },
-    { 
-      label: 'Phone', 
-      renderCell: (user) => user.phone || <span className="text-gray-400">N/A</span>
+    {
+      label: 'Vehicle',
+      renderCell: (driver: Driver) => driver.vehicle ? `${driver.vehicle.model} (${driver.vehicle.licensePlate})` : 'N/A',
+      sort: { sortKey: 'VEHICLE' }
     },
-    { 
-      label: 'Role', 
-      renderCell: (user) => (
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-          user.role === 'admin' ? 'bg-red-100 text-red-800' :
-          user.role === 'driver' ? 'bg-blue-100 text-blue-800' :
-          'bg-green-100 text-green-800'
-        }`}>
-          {user.role}
-        </span>
-      )
+    {
+      label: 'Rating',
+      renderCell: (driver: Driver) => (
+        <div className="flex items-center gap-1">
+          <span>{driver.rating.toFixed(1)}</span>
+          <Star size={14} className="text-yellow-400 fill-yellow-400" />
+        </div>
+      ),
+      sort: { sortKey: 'RATING' }
     },
     {
       label: 'Created',
-      renderCell: (user) => new Date(user.createdAt).toLocaleDateString(),
+      renderCell: (driver: Driver) => new Date(driver.createdAt).toLocaleDateString(),
       sort: { sortKey: 'CREATED' }
     },
     {
       label: 'Actions',
-      renderCell: (user) => (
+      renderCell: (driver: Driver) => (
         <div className="flex gap-2">
           <button
-            onClick={() => setEditingUser(user)}
+            onClick={() => setEditingDriver(driver)}
             className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded text-xs"
-            title="Edit user"
+            title="Edit driver"
           >
             <Edit size={14} />
           </button>
           <button
             onClick={() => {
-              if (confirm(`Are you sure you want to delete ${user.name}?`)) {
-                deleteUser.mutate(user.id);
+              if (confirm(`Are you sure you want to delete driver ${driver.user?.firstName || ''} ${driver.user?.lastName || ''}?`)) {
+                deleteDriver.mutate(driver.id);
               }
             }}
             className="flex items-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded text-xs"
-            disabled={deleteUser.isPending}
-            title="Delete user"
+            disabled={deleteDriver.isPending}
+            title="Delete driver"
           >
             <Trash2 size={14} />
           </button>
@@ -125,29 +125,29 @@ export default function UsersList() {
   // Calculate pagination values
   const startIndex = Math.min((page - 1) * limit + 1, totalItems);
   const endIndex = Math.min(page * limit, totalItems);
-  const totalPages = Math.ceil(totalItems / limit);
+  // const totalPages = Math.ceil(totalItems / limit); // Not directly used in Pagination component, but good to have
 
   return (
-    <div className="flex min-h-screen bg-gray-100"> {/* Added flex container */}
+    <div className="flex min-h-screen bg-gray-100">
       <DashboardSidebar userType="admin" />
-      
-      <div className="flex-1 p-6 overflow-y-auto"> {/* Content area, takes remaining space */}
-        <div className="bg-white rounded-lg shadow"> {/* Original styling for the content */}
+
+      <div className="flex-1 p-6 overflow-y-auto">
+        <div className="bg-white rounded-lg shadow">
           {/* Header */}
           <div className="p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <h2 className="text-xl font-bold text-gray-800">Users</h2>
+              <h2 className="text-xl font-bold text-gray-800">Drivers</h2>
               <p className="text-sm text-gray-600">
-                Showing {startIndex} to {endIndex} of {totalItems} users
+                Showing {startIndex} to {endIndex} of {totalItems} drivers
               </p>
             </div>
-            
+
             <div className="flex flex-wrap gap-2 w-full sm:w-auto">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search users..."
+                  placeholder="Search drivers..."
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
@@ -156,27 +156,15 @@ export default function UsersList() {
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-              
-              <select
-                value={roleFilter || ''}
-                onChange={(e) => {
-                  setRoleFilter(e.target.value || undefined);
-                  setPage(1);
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">All Roles</option>
-                <option value="customer">Customer</option>
-                <option value="driver">Driver</option>
-                <option value="admin">Admin</option>
-              </select>
-              
+
+              {/* No type/status filters for drivers based on entity, add if needed */}
+
               <button
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-                onClick={() => setCreatingUser(true)}
+                onClick={() => setCreatingDriver(true)}
               >
                 <Plus size={18} />
-                Add User
+                Add Driver
               </button>
             </div>
           </div>
@@ -196,9 +184,9 @@ export default function UsersList() {
           {/* Error state */}
           {isError && (
             <div className="p-6 bg-red-50 text-red-700 rounded-lg">
-              <h3 className="font-medium">Error loading users</h3>
+              <h3 className="font-medium">Error loading drivers</h3>
               <p className="text-sm mt-1">{error.message || 'Please try again later'}</p>
-              <button 
+              <button
                 onClick={() => window.location.reload()}
                 className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
@@ -208,13 +196,12 @@ export default function UsersList() {
           )}
 
           {/* Empty state */}
-          {!isLoading && !isError && users.length === 0 && (
+          {!isLoading && !isError && drivers.length === 0 && (
             <div className="p-12 text-center">
-              <div className="text-gray-400 mb-2">No users found</div>
+              <div className="text-gray-400 mb-2">No drivers found</div>
               <button
                 onClick={() => {
                   setSearchTerm('');
-                  setRoleFilter(undefined);
                   setPage(1);
                 }}
                 className="text-blue-600 hover:text-blue-800 text-sm"
@@ -225,7 +212,7 @@ export default function UsersList() {
           )}
 
           {/* Data table */}
-          {!isLoading && !isError && users.length > 0 && (
+          {!isLoading && !isError && drivers.length > 0 && (
             <>
               <div className="overflow-x-auto">
                 <CompactTable
@@ -236,7 +223,7 @@ export default function UsersList() {
                   layout={{ fixedHeader: true }}
                 />
               </div>
-              
+
               {/* Pagination */}
               <div className="p-4 border-t">
                 <Pagination
@@ -249,27 +236,27 @@ export default function UsersList() {
               </div>
             </>
           )}
-        </div> {/* End of bg-white rounded-lg shadow div */}
-      </div> {/* End of flex-1 p-6 overflow-y-auto div */}
+        </div>
+      </div>
 
       {/* Modals */}
-      {editingUser && (
-        <EditUserModal 
-          user={editingUser}
-          onClose={() => setEditingUser(null)}
+      {editingDriver && (
+        <EditDriverModal
+          driver={editingDriver}
+          onClose={() => setEditingDriver(null)}
           onSave={() => {
-            setEditingUser(null);
-            // You might want to invalidate queries here
+            setEditingDriver(null);
+            // Invalidate queries to refetch data after save (already handled by useMutation onSuccess)
           }}
         />
       )}
-      
-      {creatingUser && (
-        <EditUserModal 
-          onClose={() => setCreatingUser(false)}
+
+      {creatingDriver && (
+        <EditDriverModal
+          onClose={() => setCreatingDriver(false)}
           onSave={() => {
-            setCreatingUser(false);
-            // Invalidate queries or refetch data
+            setCreatingDriver(false);
+            // Invalidate queries to refetch data after save (already handled by useMutation onSuccess)
           }}
         />
       )}

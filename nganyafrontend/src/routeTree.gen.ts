@@ -16,10 +16,12 @@ import { Route as DeliveryRouteImport } from './routes/Delivery'
 import { Route as ContactRouteImport } from './routes/Contact'
 import { Route as BookingRouteImport } from './routes/Booking'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as DashboardDriverRouteImport } from './routes/dashboard/driver'
 import { Route as DashboardCustomerRouteImport } from './routes/dashboard/customer'
 import { Route as DashboardAdminRouteImport } from './routes/dashboard/admin'
 import { Route as DashboardProfileRouteImport } from './routes/dashboard/Profile'
+import { Route as AdminVehicleRouteImport } from './routes/Admin/vehicle'
+import { Route as AdminDriversRouteImport } from './routes/Admin/drivers'
+import { Route as AdminDeliveriesRouteImport } from './routes/Admin/deliveries'
 
 const UserRoute = UserRouteImport.update({
   id: '/user',
@@ -56,11 +58,6 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DashboardDriverRoute = DashboardDriverRouteImport.update({
-  id: '/dashboard/driver',
-  path: '/dashboard/driver',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const DashboardCustomerRoute = DashboardCustomerRouteImport.update({
   id: '/dashboard/customer',
   path: '/dashboard/customer',
@@ -76,6 +73,21 @@ const DashboardProfileRoute = DashboardProfileRouteImport.update({
   path: '/dashboard/Profile',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminVehicleRoute = AdminVehicleRouteImport.update({
+  id: '/Admin/vehicle',
+  path: '/Admin/vehicle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminDriversRoute = AdminDriversRouteImport.update({
+  id: '/Admin/drivers',
+  path: '/Admin/drivers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminDeliveriesRoute = AdminDeliveriesRouteImport.update({
+  id: '/Admin/deliveries',
+  path: '/Admin/deliveries',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -85,10 +97,12 @@ export interface FileRoutesByFullPath {
   '/Drive': typeof DriveRoute
   '/Services': typeof ServicesRoute
   '/user': typeof UserRoute
+  '/Admin/deliveries': typeof AdminDeliveriesRoute
+  '/Admin/drivers': typeof AdminDriversRoute
+  '/Admin/vehicle': typeof AdminVehicleRoute
   '/dashboard/Profile': typeof DashboardProfileRoute
   '/dashboard/admin': typeof DashboardAdminRoute
   '/dashboard/customer': typeof DashboardCustomerRoute
-  '/dashboard/driver': typeof DashboardDriverRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -98,10 +112,12 @@ export interface FileRoutesByTo {
   '/Drive': typeof DriveRoute
   '/Services': typeof ServicesRoute
   '/user': typeof UserRoute
+  '/Admin/deliveries': typeof AdminDeliveriesRoute
+  '/Admin/drivers': typeof AdminDriversRoute
+  '/Admin/vehicle': typeof AdminVehicleRoute
   '/dashboard/Profile': typeof DashboardProfileRoute
   '/dashboard/admin': typeof DashboardAdminRoute
   '/dashboard/customer': typeof DashboardCustomerRoute
-  '/dashboard/driver': typeof DashboardDriverRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -112,10 +128,12 @@ export interface FileRoutesById {
   '/Drive': typeof DriveRoute
   '/Services': typeof ServicesRoute
   '/user': typeof UserRoute
+  '/Admin/deliveries': typeof AdminDeliveriesRoute
+  '/Admin/drivers': typeof AdminDriversRoute
+  '/Admin/vehicle': typeof AdminVehicleRoute
   '/dashboard/Profile': typeof DashboardProfileRoute
   '/dashboard/admin': typeof DashboardAdminRoute
   '/dashboard/customer': typeof DashboardCustomerRoute
-  '/dashboard/driver': typeof DashboardDriverRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -127,10 +145,12 @@ export interface FileRouteTypes {
     | '/Drive'
     | '/Services'
     | '/user'
+    | '/Admin/deliveries'
+    | '/Admin/drivers'
+    | '/Admin/vehicle'
     | '/dashboard/Profile'
     | '/dashboard/admin'
     | '/dashboard/customer'
-    | '/dashboard/driver'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -140,10 +160,12 @@ export interface FileRouteTypes {
     | '/Drive'
     | '/Services'
     | '/user'
+    | '/Admin/deliveries'
+    | '/Admin/drivers'
+    | '/Admin/vehicle'
     | '/dashboard/Profile'
     | '/dashboard/admin'
     | '/dashboard/customer'
-    | '/dashboard/driver'
   id:
     | '__root__'
     | '/'
@@ -153,10 +175,12 @@ export interface FileRouteTypes {
     | '/Drive'
     | '/Services'
     | '/user'
+    | '/Admin/deliveries'
+    | '/Admin/drivers'
+    | '/Admin/vehicle'
     | '/dashboard/Profile'
     | '/dashboard/admin'
     | '/dashboard/customer'
-    | '/dashboard/driver'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -167,10 +191,12 @@ export interface RootRouteChildren {
   DriveRoute: typeof DriveRoute
   ServicesRoute: typeof ServicesRoute
   UserRoute: typeof UserRoute
+  AdminDeliveriesRoute: typeof AdminDeliveriesRoute
+  AdminDriversRoute: typeof AdminDriversRoute
+  AdminVehicleRoute: typeof AdminVehicleRoute
   DashboardProfileRoute: typeof DashboardProfileRoute
   DashboardAdminRoute: typeof DashboardAdminRoute
   DashboardCustomerRoute: typeof DashboardCustomerRoute
-  DashboardDriverRoute: typeof DashboardDriverRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -224,13 +250,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dashboard/driver': {
-      id: '/dashboard/driver'
-      path: '/dashboard/driver'
-      fullPath: '/dashboard/driver'
-      preLoaderRoute: typeof DashboardDriverRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/dashboard/customer': {
       id: '/dashboard/customer'
       path: '/dashboard/customer'
@@ -252,6 +271,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/Admin/vehicle': {
+      id: '/Admin/vehicle'
+      path: '/Admin/vehicle'
+      fullPath: '/Admin/vehicle'
+      preLoaderRoute: typeof AdminVehicleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/Admin/drivers': {
+      id: '/Admin/drivers'
+      path: '/Admin/drivers'
+      fullPath: '/Admin/drivers'
+      preLoaderRoute: typeof AdminDriversRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/Admin/deliveries': {
+      id: '/Admin/deliveries'
+      path: '/Admin/deliveries'
+      fullPath: '/Admin/deliveries'
+      preLoaderRoute: typeof AdminDeliveriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -263,10 +303,12 @@ const rootRouteChildren: RootRouteChildren = {
   DriveRoute: DriveRoute,
   ServicesRoute: ServicesRoute,
   UserRoute: UserRoute,
+  AdminDeliveriesRoute: AdminDeliveriesRoute,
+  AdminDriversRoute: AdminDriversRoute,
+  AdminVehicleRoute: AdminVehicleRoute,
   DashboardProfileRoute: DashboardProfileRoute,
   DashboardAdminRoute: DashboardAdminRoute,
   DashboardCustomerRoute: DashboardCustomerRoute,
-  DashboardDriverRoute: DashboardDriverRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -73,10 +73,10 @@ const sidebarItems = {
   admin: [
     { icon: Home, label: "home", href: "/" },
     { icon: Users, label: "Users", href: "/User" },
-    { icon: Car, label: "Drivers", href: "/admin/drivers" },
-    { icon: Truck, label: "Vehicles", href: "/vehicles" },
-    { icon: MapPin, label: "Rides", href: "/admin-dashboard/rides" },
-    { icon: Package, label: "Deliveries", href: "/admin-dashboard/deliveries" },
+    { icon: Car, label: "Drivers", href: "/Admin/drivers" },
+    { icon: Truck, label: "Vehicles", href: "/Admin/vehicle" },
+    { icon: MapPin, label: "Rides", href: "/Admin/rides" },
+    { icon: Package, label: "Deliveries", href: "/Admin/deliveries" },
     { icon: BarChart3, label: "Analytics", href: "/admin-dashboard/analytics" },
     { icon: CreditCard, label: "Payments", href: "/admin-dashboard/payments" },
     {
