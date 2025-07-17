@@ -68,32 +68,15 @@ export interface Driver {
 // ... (existing imports and interfaces)
 
 export interface DriverDashboardStats {
-  totalRidesCompleted: number;
-  totalRevenueEarned: number;
-  averageRating: number;
-  totalHoursOnline: number;
-  upcomingBookings: number;
-  todayEarnings: number;
-  weeklyEarnings: number;
-  monthlyEarnings: number;
-  totalRides: number; 
-   rating: number,
+  todayEarnings: number,
+    weeklyProgress: number,
+    totalBookings:number,
+    totalRides: number,
+    rating: number,
     completionRate: number,
-    hoursOnline: number,
-    activeRides: number; // Total number of rides currently active,
-  totalDeliveries: number;
-  totalDistanceCovered: number; // Total distance covered by the driver
-  totalTimeSpent: number; // Total time spent on rides and deliveries
-  totalCancelledRides: number; // Total number of rides cancelled by the driver
-  totalCancelledDeliveries: number; // Total number of deliveries cancelled by the driver
-  totalActiveRides: number; // Total number of rides currently active
-  totalActiveDeliveries: number; // Total number of deliveries currently active
-  totalFeedbackReceived: number; // Total number of feedback received from users
-  averageResponseTime: number; // Average time taken by the driver to respond to ride or delivery requests
-  totalSupportTickets: number; // Total number of support tickets raised by the driver
-  totalSupportTicketsResolved: number; // Total number of support tickets resolved by the driver
-  totalSupportTicketsPending: number; // Total number of support tickets pending resolution
-  // Add any other relevant stats for a driver dashboard
+    hoursOnline: number, 
+    weeklyEarnings:number,
+
 }
 
 

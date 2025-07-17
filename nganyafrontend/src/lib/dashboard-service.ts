@@ -12,11 +12,11 @@ import type {
   Review,
   Notification,
   PaginatedResponse,
-  ApiResponse, // Keep ApiResponse if your single item responses still use it
-  VehicleType, // Import VehicleType
+  ApiResponse,
+  VehicleType,
   VehicleStatus,
   CreateUserRequest,
-  DriverDashboardStats, // Import VehicleStatus
+  DriverDashboardStats,
 } from './types';
 
 class RideshareService {
@@ -40,26 +40,89 @@ class RideshareService {
       };
     }
   }
-  
-  async getDriverStats(driverId: string): Promise<DriverDashboardStats> {
+
+  // Adjusted getDriverStats to match usage in DriverDashboard.tsx
+  // Assumes backend infers driverId from authentication, or you'll need to pass it
+  async getDriverStats(): Promise<DriverDashboardStats> {
     try {
-      const res = await api.get(`/drivers/${driverId}/stats`);
+      // Assuming the API endpoint for driver stats doesn't require a driverId if authenticated
+      const res = await api.get(`/drivers/me/stats`); // Or just '/driver/stats' depending on your API
       return res.data;
     } catch (error) {
-      console.error(`Error fetching driver stats for driverId ${driverId}:`, error);
+      console.error(`Error fetching driver stats:`, error);
       // Return default/empty stats in case of an error
       return {
-        totalRidesCompleted: 0,
-        totalRevenueEarned: 0,
-        averageRating: 0,
-        totalHoursOnline: 0,
-        upcomingBookings: 0,
+        todayEarnings: 0, // Added based on DriverDashboard usage
+        weeklyEarnings: 0, // Added based on DriverDashboard usage
+        totalBookings: 0, // Added based on DriverDashboard usage (if applicable to driver)
+        totalRides: 0, // Maps to totalRidesCompleted
+        rating: 0, // Maps to averageRating
+        completionRate: 0, // Mapped to completionRate
+        hoursOnline: 0, // Maps to totalHoursOnline
+      };
+    }
+  }
+
+  // ⭐ NEW METHOD: updateDriverLocation ⭐
+  async updateDriverLocation(latitude: number, longitude: number): Promise<void> {
+    try {
+      await api.post('/drivers/location', { latitude, longitude });
+      console.log('Driver location updated successfully on server.');
+    } catch (error) {
+      console.error('Error sending driver location to server:', error);
+      throw error; // Re-throw to be caught by the component
+    }
+  }
+
+  // ⭐ NEW METHOD: updateRideStatus ⭐
+  async updateRideStatus(rideId: string, status: string): Promise<Ride> {
+    try {
+      const res = await api.patch<ApiResponse<Ride>>(`/rides/${rideId}/status`, { status });
+      return res.data.data;
+    } catch (error) {
+      console.error(`Error updating ride ${rideId} status to ${status}:`, error);
+      throw error;
+    }
+  }
+
+  // ⭐ NEW METHOD: getDriverVehicle ⭐
+  async getDriverVehicle(): Promise<Vehicle | null> {
+    try {
+      const res = await api.get<ApiResponse<Vehicle>>('/drivers'); // Assuming endpoint to get current driver's vehicle
+      return res.data.data;
+    } catch (error) {
+      console.error('Error fetching driver vehicle:', error);
+      return null;
+    }
+  }
+
+  // ⭐ NEW METHOD: getDriverRides (for pending/active rides for a specific driver) ⭐
+  async getDriverRides(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<PaginatedResponse<Ride>> {
+    try {
+      // Assuming an endpoint to get rides specific to the authenticated driver
+      const res = await api.get<PaginatedResponse<Ride>>('/drivers', { params });
+      return res.data; // Assuming this endpoint already returns a PaginatedResponse
+    } catch (error) {
+      console.error('Error fetching driver rides:', error);
+      return {
+        data: [],
+        items: [],
+        total: 0,
+        page: params?.page || 1,
+        limit: params?.limit || 10,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
       };
     }
   }
 
   // USERS
-    async getUsers(params?: {
+  async getUsers(params?: {
     page?: number;
     limit?: number;
     role?: string;
@@ -100,16 +163,15 @@ class RideshareService {
   async createUser(data: CreateUserRequest): Promise<User> {
     try {
       const res = await api.post<User>('/users', data);
-      
-      console.log("✅ createUser API call successful. Data:", res.data);
+
+      console.log(" createUser API call successful. Data:", res.data);
       return res.data;
     } catch (error) {
-      console.error("❌ createUser API call failed. Error:", error);
+      console.error(" createUser API call failed. Error:", error);
       throw error;
     }
   }
 
- 
 
   async updateUser(id: string, data: Partial<User>) {
     const res = await api.patch<ApiResponse<User>>(`/users/${id}`, data);
@@ -122,7 +184,7 @@ class RideshareService {
   }
 
   // VEHICLES
- async getVehicles(params?: {
+  async getVehicles(params?: {
     page?: number;
     limit?: number;
     type?: VehicleType;
@@ -140,7 +202,7 @@ class RideshareService {
       );
 
       const rawVehiclesArray = res.data; // This is your [Vehicle, Vehicle, ...] array
-      console.log("✅ getVehicles API call successful. Raw Data (Array):", rawVehiclesArray);
+      console.log(" getVehicles API call successful. Raw Data (Array):", rawVehiclesArray);
 
       // ⭐ Manually construct the PaginatedResponse<Vehicle> here ⭐
       const totalItems = rawVehiclesArray.length; // If your API doesn't provide total, use array length
@@ -164,8 +226,8 @@ class RideshareService {
 
     } catch (error) {
       console.error("❌ getVehicles API call failed. Error:", error);
-     
-      throw error; 
+
+      throw error;
     }
   }
 
@@ -185,7 +247,7 @@ class RideshareService {
   }
 
   // DRIVERS
-   async getDrivers(params?: {
+  async getDrivers(params?: {
     page?: number;
     limit?: number;
     q?: string; // General search
@@ -222,7 +284,7 @@ class RideshareService {
       return paginatedResponse;
 
     } catch (error) {
-      console.error("❌ getDrivers API call failed. Error:", error);
+      console.error(" getDrivers API call failed. Error:", error);
       throw error;
     }
   }
@@ -319,7 +381,7 @@ class RideshareService {
   }
 
   // DELIVERIES
-   async getDeliveries(params?: {
+  async getDeliveries(params?: {
     page?: number;
     limit?: number;
     status?: string;

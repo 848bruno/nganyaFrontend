@@ -1,27 +1,85 @@
 // src/lib/geo-service.ts
-import axios from "axios";
+import { api } from './api'; // Assuming 'api' is your configured axios instance
 
-const API_BASE_URL = "http://localhost:3001"; // Replace with your NestJS backend URL
+// Define types for the route data and suggested vehicle data coming from backend
+export interface GeocodedCoordinates {
+  latitude: number;
+  longitude: number;
+}
 
-export const geoService = {
+export interface RouteData {
+  distance: number; // in meters
+  duration: number; // in seconds
+  polyline: string; // Encoded polyline for map display
+  pickupLatitude: number; // Geocoded
+  pickupLongitude: number; // Geocoded
+  destinationLatitude: number; // Geocoded
+  destinationLongitude: number; // Geocoded
+}
+
+export interface SuggestedDriver {
+  id: string; // Driver's User ID
+  name: string;
+  rating: number;
+  image?: string;
+  trips: number;
+}
+
+export interface SuggestedVehicleResponse {
+  id: string; // Vehicle ID
+  type: string;
+  price: number;
+  estimatedTime: string; // E.g., "5 min"
+  capacity: number;
+  features?: string[];
+  vehicleInfo?: string;
+  driver: SuggestedDriver; // Driver profile associated with this vehicle
+}
+
+export interface GetSuggestedDriversAndRouteResponse {
+  route: RouteData;
+  suggestedVehicles: SuggestedVehicleResponse[];
+}
+
+class GeoService {
   /**
-   * Calculates a route between two addresses using the backend.
-   * @param pickup The pickup address.
-   * @param dropoff The dropoff address.
-   * @returns The route data including geometry, distance, and duration.
+   * Calculates route and fetches nearest drivers based on pickup and destination addresses.
+   * This calls a single backend endpoint that orchestrates geocoding, routing, and driver matching.
    */
-  async calculateRoute(pickup: string, dropoff: string) {
+  async getSuggestedDriversAndRoute(
+    pickupAddress: string,
+    destinationAddress: string
+  ): Promise<GetSuggestedDriversAndRouteResponse> {
     try {
-      const response = await axios.post(`${API_BASE_URL}/route/calculate`, {
-        pickup,
-        dropoff,
-      });
-      return response.data;
-    } catch (error: any) {
-      console.error("GeoService Error:", error.response?.data || error.message);
-      throw new Error(
-        error.response?.data?.message || "Failed to calculate route",
+      const res = await api.get<GetSuggestedDriversAndRouteResponse>(
+        '/geo/suggest-drivers', // ⭐ NEW Backend Endpoint ⭐
+        {
+          params: {
+            pickup: pickupAddress,
+            destination: destinationAddress,
+          },
+        }
       );
+      return res.data;
+    } catch (error) {
+      console.error("Error fetching suggested drivers and route:", error);
+      throw error;
     }
-  },
-};
+  }
+
+  // You can keep the old calculateRoute if you still need it separately,
+  // but the new getSuggestedDriversAndRoute will often supersede it for the main flow.
+  // async calculateRoute(pickupAddress: string, destinationAddress: string): Promise<RouteData> {
+  //   try {
+  //     const res = await api.get<RouteData>('/geo/route', {
+  //       params: { pickup: pickupAddress, destination: destinationAddress },
+  //     });
+  //     return res.data;
+  //   } catch (error) {
+  //     console.error('Error calculating route:', error);
+  //     throw error;
+  //   }
+  // }
+}
+
+export const geoService = new GeoService();

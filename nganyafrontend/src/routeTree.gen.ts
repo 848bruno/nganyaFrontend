@@ -16,6 +16,7 @@ import { Route as DeliveryRouteImport } from './routes/Delivery'
 import { Route as ContactRouteImport } from './routes/Contact'
 import { Route as BookingRouteImport } from './routes/Booking'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashboardDriverRouteImport } from './routes/dashboard/driver'
 import { Route as DashboardCustomerRouteImport } from './routes/dashboard/customer'
 import { Route as DashboardAdminRouteImport } from './routes/dashboard/admin'
 import { Route as DashboardProfileRouteImport } from './routes/dashboard/Profile'
@@ -56,6 +57,11 @@ const BookingRoute = BookingRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardDriverRoute = DashboardDriverRouteImport.update({
+  id: '/dashboard/driver',
+  path: '/dashboard/driver',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardCustomerRoute = DashboardCustomerRouteImport.update({
@@ -103,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/Profile': typeof DashboardProfileRoute
   '/dashboard/admin': typeof DashboardAdminRoute
   '/dashboard/customer': typeof DashboardCustomerRoute
+  '/dashboard/driver': typeof DashboardDriverRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/dashboard/Profile': typeof DashboardProfileRoute
   '/dashboard/admin': typeof DashboardAdminRoute
   '/dashboard/customer': typeof DashboardCustomerRoute
+  '/dashboard/driver': typeof DashboardDriverRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -134,6 +142,7 @@ export interface FileRoutesById {
   '/dashboard/Profile': typeof DashboardProfileRoute
   '/dashboard/admin': typeof DashboardAdminRoute
   '/dashboard/customer': typeof DashboardCustomerRoute
+  '/dashboard/driver': typeof DashboardDriverRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -151,6 +160,7 @@ export interface FileRouteTypes {
     | '/dashboard/Profile'
     | '/dashboard/admin'
     | '/dashboard/customer'
+    | '/dashboard/driver'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -166,6 +176,7 @@ export interface FileRouteTypes {
     | '/dashboard/Profile'
     | '/dashboard/admin'
     | '/dashboard/customer'
+    | '/dashboard/driver'
   id:
     | '__root__'
     | '/'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '/dashboard/Profile'
     | '/dashboard/admin'
     | '/dashboard/customer'
+    | '/dashboard/driver'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -197,6 +209,7 @@ export interface RootRouteChildren {
   DashboardProfileRoute: typeof DashboardProfileRoute
   DashboardAdminRoute: typeof DashboardAdminRoute
   DashboardCustomerRoute: typeof DashboardCustomerRoute
+  DashboardDriverRoute: typeof DashboardDriverRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -248,6 +261,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/driver': {
+      id: '/dashboard/driver'
+      path: '/dashboard/driver'
+      fullPath: '/dashboard/driver'
+      preLoaderRoute: typeof DashboardDriverRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/customer': {
@@ -309,6 +329,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardProfileRoute: DashboardProfileRoute,
   DashboardAdminRoute: DashboardAdminRoute,
   DashboardCustomerRoute: DashboardCustomerRoute,
+  DashboardDriverRoute: DashboardDriverRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
