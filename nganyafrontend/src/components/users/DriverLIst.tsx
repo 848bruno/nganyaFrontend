@@ -5,8 +5,8 @@ import { CompactTable } from '@table-library/react-table-library/compact';
 import { useTheme } from '@table-library/react-table-library/theme';
 import { getTheme } from '@table-library/react-table-library/baseline';
 import { Edit, Trash2, Plus, Search, Star } from 'lucide-react';
-import { useDrivers, useDeleteDriver } from '@/useHooks'; // Import driver hooks
-import type { Driver } from '@/lib/types'; // Import Driver type
+import { useDrivers, useDeleteUser } from '@/useHooks'; // Import useDeleteUser as drivers are Users
+import type { User, UserRole } from '@/lib/types'; // Import User and UserRole types
 import EditDriverModal from '@/components/modalForm/EditDriverModal'; // Import the new modal
 import Pagination from '@/components/Pagination';
 import { DashboardSidebar } from '../dashboard-sidebar'; // Assuming sidebar is in the same folder or adjust path
@@ -16,17 +16,16 @@ export default function DriversList() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
-  // No typeFilter or statusFilter for drivers based on provided entity, add if needed
-  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [editingDriver, setEditingDriver] = useState<User | null>(null); // Changed type to User
   const [creatingDriver, setCreatingDriver] = useState(false);
 
-  // Fetch drivers
+  // Fetch drivers (which are Users with role 'driver')
   const { data, isLoading, isError, error } = useDrivers(page, limit, searchTerm);
-  const drivers = data?.items || [];
+  const drivers = data?.data || []; // Access 'data' property from PaginatedResponse
   const totalItems = data?.total || 0;
 
-  // Delete mutation
-  const deleteDriver = useDeleteDriver();
+  // Delete mutation (now uses useDeleteUser as drivers are Users)
+  const deleteDriverMutation = useDeleteUser(); // Renamed to avoid conflict with local variable
 
   // Table theme
   const theme = useTheme([
@@ -47,10 +46,11 @@ export default function DriversList() {
     {},
     {
       sortFns: {
-        NAME: (array) => array.sort((a, b) => (a.user?.firstName || '').localeCompare(b.user?.firstName || '')),
-        LICENSE_NUMBER: (array) => array.sort((a, b) => a.licenseNumber.localeCompare(b.licenseNumber)),
-        VEHICLE: (array) => array.sort((a, b) => (a.vehicle?.model || '').localeCompare(b.vehicle?.model || '')),
-        RATING: (array) => array.sort((a, b) => a.rating - b.rating),
+        NAME: (array) => array.sort((a, b) => (a.firstName || '').localeCompare(b.firstName || '')),
+        EMAIL: (array) => array.sort((a, b) => (a.email || '').localeCompare(b.email || '')),
+        LICENSE_NUMBER: (array) => array.sort((a, b) => (a.driverLicenseNumber || '').localeCompare(b.driverLicenseNumber || '')),
+        VEHICLE: (array) => array.sort((a, b) => (a.assignedVehicle?.model || '').localeCompare(b.assignedVehicle?.model || '')),
+        RATING: (array) => array.sort((a, b) => (Number(a.averageRating) || 0) - (Number(b.averageRating) || 0)), // Explicitly convert to number
         CREATED: (array) => array.sort((a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         ),
@@ -62,28 +62,30 @@ export default function DriversList() {
   const COLUMNS = [
     {
       label: 'Driver Name',
-      renderCell: (driver: Driver) => `${driver.user?.firstName || 'N/A'} ${driver.user?.lastName || ''}`,
+      renderCell: (driver: User) => `${driver.firstName || 'N/A'} ${driver.lastName || ''}`,
       sort: { sortKey: 'NAME' }
     },
     {
       label: 'Email',
-      renderCell: (driver: Driver) => driver.user?.email || 'N/A',
+      renderCell: (driver: User) => driver.email || 'N/A',
+      sort: { sortKey: 'EMAIL' }
     },
     {
       label: 'License Number',
-      renderCell: (driver: Driver) => <span className="font-mono text-xs">{driver.licenseNumber}</span>,
+      renderCell: (driver: User) => <span className="font-mono text-xs">{driver.driverLicenseNumber || 'N/A'}</span>,
       sort: { sortKey: 'LICENSE_NUMBER' }
     },
     {
       label: 'Vehicle',
-      renderCell: (driver: Driver) => driver.vehicle ? `${driver.vehicle.model} (${driver.vehicle.licensePlate})` : 'N/A',
+      renderCell: (driver: User) => driver.assignedVehicle ? `${driver.assignedVehicle.model} (${driver.assignedVehicle.licensePlate})` : 'N/A',
       sort: { sortKey: 'VEHICLE' }
     },
     {
       label: 'Rating',
-      renderCell: (driver: Driver) => (
+      renderCell: (driver: User) => (
         <div className="flex items-center gap-1">
-          <span>{driver.rating.toFixed(1)}</span>
+          {/* Explicitly convert to number before calling toFixed */}
+          <span>{(Number(driver.averageRating) || 0).toFixed(1)}</span>
           <Star size={14} className="text-yellow-400 fill-yellow-400" />
         </div>
       ),
@@ -91,12 +93,12 @@ export default function DriversList() {
     },
     {
       label: 'Created',
-      renderCell: (driver: Driver) => new Date(driver.createdAt).toLocaleDateString(),
+      renderCell: (driver: User) => new Date(driver.createdAt).toLocaleDateString(),
       sort: { sortKey: 'CREATED' }
     },
     {
       label: 'Actions',
-      renderCell: (driver: Driver) => (
+      renderCell: (driver: User) => (
         <div className="flex gap-2">
           <button
             onClick={() => setEditingDriver(driver)}
@@ -107,12 +109,12 @@ export default function DriversList() {
           </button>
           <button
             onClick={() => {
-              if (confirm(`Are you sure you want to delete driver ${driver.user?.firstName || ''} ${driver.user?.lastName || ''}?`)) {
-                deleteDriver.mutate(driver.id);
+              if (confirm(`Are you sure you want to delete driver ${driver.firstName || ''} ${driver.lastName || ''}?`)) {
+                deleteDriverMutation.mutate(driver.id); // Use deleteDriverMutation
               }
             }}
             className="flex items-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded text-xs"
-            disabled={deleteDriver.isPending}
+            disabled={deleteDriverMutation.isPending}
             title="Delete driver"
           >
             <Trash2 size={14} />
@@ -125,7 +127,6 @@ export default function DriversList() {
   // Calculate pagination values
   const startIndex = Math.min((page - 1) * limit + 1, totalItems);
   const endIndex = Math.min(page * limit, totalItems);
-  // const totalPages = Math.ceil(totalItems / limit); // Not directly used in Pagination component, but good to have
 
   return (
     <div className="flex min-h-screen bg-gray-100">
@@ -156,8 +157,6 @@ export default function DriversList() {
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-
-              {/* No type/status filters for drivers based on entity, add if needed */}
 
               <button
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"

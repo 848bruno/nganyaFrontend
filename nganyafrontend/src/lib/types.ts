@@ -1,46 +1,69 @@
 // Core User Types
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: "customer" | "driver" | "admin";
-  phone?: string;
-  createdAt: Date;
-  updatedAt: Date;
-  firstName:string;
-  lastName:string;
-  
+export enum UserRole {
+  Customer = 'customer',
+  Driver = 'driver',
+  Admin = 'admin',
 }
 
-// --- Vehicle Enums ---
-export enum VehicleType {
-  Sedan = "sedan",
-  SUV = "suv",
-  Luxury = "luxury",
-  Van = "van",
-  Bike = "bike",
-}
-
-export enum VehicleStatus {
-  Available = "available",
-  InUse = "in_use",
-  Maintenance = "maintenance",
-}
-// --- End Vehicle Enums ---
-
-// Vehicle Types
+// ⭐ NEW: Vehicle Interface - Exported ⭐
 export interface Vehicle {
   id: string;
   licensePlate: string;
-  type: VehicleType; // Using the enum here
-  status: VehicleStatus; // Using the enum here
+  type: VehicleType;
+  status: VehicleStatus;
   model: string;
   year: number;
   createdAt: Date;
   updatedAt: Date;
+  currentDriver?: User | null; // Optional: if you want to link back to the driver
 }
 
-// --- Driver Enum ---
+export interface User {
+  id: string;
+  name: string; // Consider splitting into firstName and lastName
+  email: string;
+  password?: string; // Should not be sent to frontend after creation/update
+  role: UserRole; // Using the enum for consistency
+  phone?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  firstName?: string; // Added for consistency with potential backend split
+  lastName?: string; // Added for consistency with potential backend split
+
+  // ⭐ RE-ADDED: Driver-specific fields (will be null/undefined for non-drivers) ⭐
+  isOnline?: boolean;
+  currentLatitude?: number | null;
+  currentLongitude?: number | null;
+  driverLicenseNumber?: string | null;
+  driverStatus?: 'pending' | 'approved' | 'rejected' | null; // Re-added
+  totalRidesCompleted?: number;
+  averageRating?: number;
+  assignedVehicle?: Vehicle; // Populated Vehicle object
+  assignedVehicleId?: string | null; // Foreign key
+}
+
+// --- Vehicle Enums ---
+export enum VehicleType {
+  Sedan = 'sedan',
+  SUV = 'suv',
+  Luxury = 'luxury',
+  Van = 'van',
+  Bike = 'bike',
+}
+
+export enum VehicleStatus {
+  Available = 'available',
+  InUse = 'in_use',
+  Maintenance = 'maintenance',
+}
+// --- End Vehicle Enums ---
+
+// ⭐ REMOVED: Driver Types - as they are now merged into User ⭐
+// export interface Driver { ... }
+
+// --- Driver Status Enum (now part of User entity's driverStatus) ---
+// This enum can be removed if you're directly using string literals 'pending', 'approved', etc.
+// Or keep it if you want strong typing for the driverStatus property on User.
 export enum DriverStatus {
   Active = "active",
   Inactive = "inactive",
@@ -48,37 +71,28 @@ export enum DriverStatus {
   OffDuty = "off_duty",
   Suspended = "suspended",
 }
-// --- End Driver Enum ---
+// --- End Driver Status Enum ---
 
-// Driver Types
-export interface Driver {
-  id: string;
-  userId: string;
-  user: User;
-  licenseNumber: string;
-  rating: number;
-  vehicleId?: string;
-  vehicle?: Vehicle;
-  // ✨ ADDED: Driver Status property
-  status: DriverStatus; // Add this line
-  createdAt: Date;
-  updatedAt: Date;
-}
 
-// ... (existing imports and interfaces)
-
+// ⭐ MODIFIED: Driver Dashboard Stats - Added missing properties ⭐
 export interface DriverDashboardStats {
-  todayEarnings: number,
-    weeklyProgress: number,
-    totalBookings:number,
-    totalRides: number,
-    rating: number,
-    completionRate: number,
-    hoursOnline: number, 
-    weeklyEarnings:number,
-
+  todayEarnings: number;
+  weeklyProgress: number;
+  totalBookings: number; // Total bookings by this driver
+  totalRides: number; // Total rides completed by this driver
+  rating: number; // Average rating of this driver
+  completionRate: number;
+  hoursOnline: number;
+  weeklyEarnings: number;
+  isOnline?: boolean; // Added for consistency with frontend usage
+  // ⭐ Added properties from AdminStats that were being returned by getAdminStats ⭐
+  totalUsers: number;
+  activeDrivers: number;
+  totalVehicles: number;
+  monthlyRevenue: number;
+  averageRating: number; // Already exists, but ensure it's there
+  supportTickets: number;
 }
-
 
 export enum DeliveryStatus {
   Pending = 'pending',
@@ -87,7 +101,7 @@ export enum DeliveryStatus {
   Delivered = 'delivered',
   Cancelled = 'cancelled',
 }
-// Location Type
+// Location Type (remains the same)
 export interface Location {
   lat: number;
   lng: number;
@@ -97,7 +111,7 @@ export interface Location {
 export interface Route {
   id: string;
   driverId: string;
-  driver: Driver;
+  driver: User; // Driver is now a User
   startPoint: Location;
   endPoint: Location;
   stops?: Location[];
@@ -111,20 +125,22 @@ export interface Route {
 export interface Ride {
   id: string;
   driverId: string;
-  driver: Driver;
+  driver: User; // Driver is now a User
   vehicleId: string;
   vehicle: Vehicle;
   routeId?: string;
   route?: Route;
   pickUpLocation: Location;
   dropOffLocation: Location;
-  type: "private" | "carpool";
-  status: "pending" | "active" | "completed" | "cancelled";
+  type: 'private' | 'carpool';
+  status: 'pending' | 'active' | 'completed' | 'cancelled';
   fare: number;
   startTime?: Date;
   endTime?: Date;
   createdAt: Date;
   updatedAt: Date;
+  bookings?: Booking[]; // Added for DriverDashboard to access customer name
+  reviews?: Review[]; // Added for consistency with backend
 }
 
 // Booking Types
@@ -136,8 +152,8 @@ export interface Booking {
   ride?: Ride;
   deliveryId?: string;
   delivery?: Delivery;
-  type: "ride" | "delivery";
-  status: "pending" | "confirmed" | "cancelled" | "completed";
+  type: 'ride' | 'delivery';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
   seatNumber?: number;
   createdAt: Date;
   updatedAt: Date;
@@ -149,13 +165,13 @@ export interface Delivery {
   userId: string;
   user: User;
   driverId?: string;
-  driver?: Driver;
+  driver?: User; // Driver is now a User
   vehicleId?: string;
   vehicle?: Vehicle;
   pickUpLocation: Location;
   dropOffLocation: Location;
   itemType: string;
-  status: "pending" | "picked_up" | "in_transit" | "delivered" | "cancelled";
+  status: 'pending' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled';
   proofOfDelivery?: string;
   cost: number;
   createdAt: Date;
@@ -168,8 +184,8 @@ export interface Payment {
   userId: string;
   user: User;
   amount: number;
-  method: "card" | "wallet" | "cash";
-  status: "pending" | "completed" | "failed";
+  method: 'card' | 'wallet' | 'cash';
+  status: 'pending' | 'completed' | 'failed';
   transactionId: string;
   bookingId?: string;
   booking?: Booking;
@@ -181,9 +197,9 @@ export interface Payment {
 export interface Review {
   id: string;
   driverId: string;
-  driver: Driver;
+  driver: User; // Driver is now a User
   userId: string;
-  user: User;
+  user: User; // Customer is a User
   rating: number;
   comment?: string;
   rideId: string;
@@ -198,11 +214,7 @@ export interface Notification {
   userId: string;
   user: User;
   message: string;
-  type:
-    | "booking_confirmation"
-    | "driver_arrival"
-    | "delivery_update"
-    | "general";
+  type: 'booking_confirmation' | 'driver_arrival' | 'delivery_update' | 'general';
   isRead: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -221,36 +233,32 @@ export interface PaginatedResponse<T> {
   page: number;
   limit: number;
   totalPages: number;
+  // ⭐ Added for consistency with normalizePaginatedResponse ⭐
+  items?: T[];
+  hasNextPage?: boolean;
+  hasPreviousPage?: boolean;
 }
 
-// Dashboard Types
-export interface DriverStats {
-  todayEarnings: number;
-  weeklyEarnings: number;
-  monthlyEarnings: number;
-  totalRides: number;
-  rating: number;
-  completionRate: number;
-  hoursOnline: number;
-}
-
-export interface AdminStats {
-  totalUsers: number;
-  activeDrivers: number;
-  totalVehicles: number;
-  monthlyRevenue: number;
-  totalRides: number;
-  completionRate: number;
-  averageRating: number;
-  supportTickets: number;
-}
+// Dashboard Types (Adjusted to reflect User as driver)
+// ⭐ REMOVED: AdminStats - Merged into DriverDashboardStats for simplicity as per usage ⭐
+// export interface AdminStats { ... }
 
 // Form Types for API calls
 export interface CreateRideRequest {
   pickUpLocation: Location;
   dropOffLocation: Location;
-  type: "private" | "carpool";
+  type: 'private' | 'carpool';
   routeId?: string;
+  estimatedPrice: number; // Added for booking panel
+  passengerCount: number; // Added for booking panel
+  driverId: string; // Added for booking panel
+  vehicleId: string; // Added for booking panel
+  pickupAddress: string; // Added for booking panel
+  destinationAddress: string; // Added for booking panel
+  pickupLatitude: number; // Added for booking panel
+  pickupLongitude: number; // Added for booking panel
+  destinationLatitude: number; // Added for booking panel
+  destinationLongitude: number; // Added for booking panel
 }
 
 export interface CreateDeliveryRequest {
@@ -272,39 +280,56 @@ export interface CreateReviewRequest {
   comment?: string;
 }
 
-export interface RegisterDriverRequest {
-  licenseNumber: string;
-  vehicleId?: string;
-}
-
 export interface CreateVehicleRequest {
   licensePlate: string;
-  type: VehicleType; // Using the enum here
+  type: VehicleType;
   model: string;
   year: number;
+  status: VehicleStatus; // Added status for creation
 }
-
-
-// export interface PaginatedResponse<T> {
-//   items: T[]; 
-//   total: number;
-//   data: T[]; 
-//   page: number; 
-//   limit: number; 
-//   totalPages: number; }
 
 export interface CreateUserRequest {
-  firstName: string;
-  lastName: string;
+  name: string; // Changed from firstName, lastName as per your backend
   email: string;
+  password?: string;
   phone: string;
-  role: 'admin' | 'driver' | 'rider'; // Or more specific roles as needed
+  role: UserRole; // Using UserRole enum
+  driverLicenseNumber?: string; // Only for creating a driver
 }
 
-export interface CreateVehicleRequest {
-  licensePlate: string;
-  model: string;
-  year: number;
-  type: VehicleType;
-  status: VehicleStatus;
+export interface UserResponseDto {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  createdAt: Date;
+  updatedAt: Date;
+  phone?: string;
+  // ⭐ RE-ADDED: Driver-specific fields for DTO consistency ⭐
+  isOnline?: boolean;
+  currentLatitude?: number | null;
+  currentLongitude?: number | null;
+  driverLicenseNumber?: string | null;
+  driverStatus?: 'pending' | 'approved' | 'rejected' | null;
+  totalRidesCompleted?: number;
+  averageRating?: number;
+  assignedVehicle?: Vehicle;
+  assignedVehicleId?: string | null;
+}
+
+export interface UpdateUserDto {
+  name?: string;
+  email?: string;
+  password?: string;
+  role?: UserRole;
+  phone?: string;
+  // ⭐ RE-ADDED: Driver-specific fields for DTO consistency ⭐
+  isOnline?: boolean;
+  currentLatitude?: number | null;
+  currentLongitude?: number | null;
+  driverLicenseNumber?: string | null;
+  driverStatus?: 'pending' | 'approved' | 'rejected' | null;
+  totalRidesCompleted?: number;
+  averageRating?: number;
+  assignedVehicleId?: string | null; // For assigning/unassigning vehicle
 }

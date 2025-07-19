@@ -9,7 +9,6 @@ import {
   Users,
   TrendingUp,
   Zap,
-  Battery,
   Navigation,
   Phone,
   MessageSquare,
@@ -17,8 +16,8 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
-  BookOpen, // For bookings
-  ClipboardList, // For reviews
+  BookOpen,
+  ClipboardList,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,37 +28,69 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { DashboardSidebar } from '@/components/dashboard-sidebar'
 
 import { toast } from '@/components/ui/use-toast'
-import type { DriverDashboardStats, Vehicle, Ride } from '@/lib/types'
+import {
+  type User, // Import User type
+  type Vehicle,
+  type Ride,
+  type DriverDashboardStats,
+  UserRole,
+  // Import UserRole
+} from '@/lib/types'
+import { useAuth } from '@/contexts/AuthContext' // Import useAuth
 
-// Import the new useGlobalCounts and useUpdateDriverStatus hooks
-import { useGlobalCounts, useUpdateDriverStatus } from '@/useHooks' // Adjust path as needed
+// Import the new useGlobalCounts, useUpdateDriverStatus, useUpdateDriverLocation,
+// useDriverStats, useDriverVehicle, useDriverRides hooks
+import {
+  useGlobalCounts,
+  useUpdateDriverStatus,
+  useUpdateDriverLocation,
+  useDriverStats,
+  useDriverVehicle,
+  useDriverRides,
+} from '@/useHooks' // Adjust path as needed
 
 import { createFileRoute } from '@tanstack/react-router'
 import { rideshareService } from '@/lib/dashboard-service'
-import { useQueryClient } from '@tanstack/react-query' // Import useQueryClient
+import { useQueryClient } from '@tanstack/react-query'
 
 export const Route = createFileRoute('/dashboard/driver')({
   component: DriverDashboard,
 })
 
 export default function DriverDashboard() {
-  const queryClient = useQueryClient(); // Initialize query client
+  const queryClient = useQueryClient()
+  const { user } = useAuth() // Get the authenticated user from context
 
-  const [isOnline, setIsOnline] = useState(false) // Default to offline
-  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true)
+  // Use hooks to fetch driver-specific data
+  // These hooks now implicitly fetch data for the authenticated driver via backend endpoints like /users/me/...
+  const {
+    data: driverStats,
+    isLoading: isLoadingStats,
+    error: statsError,
+  } = useDriverStats()
+  const {
+    data: driverVehicle,
+    isLoading: isLoadingVehicle,
+    error: vehicleError,
+  } = useDriverVehicle()
+  const {
+    data: driverRidesData,
+    isLoading: isLoadingRides,
+    error: ridesError,
+  } = useDriverRides({ limit: 10, status: 'pending' }) // Pass params to hook
+
+  const [isOnline, setIsOnline] = useState(driverStats?.isOnline || false) // Initialize from fetched stats
   const [currentRide, setCurrentRide] = useState<Ride | null>(null)
   const [pendingRides, setPendingRides] = useState<Ride[]>([])
-  const [driverStats, setDriverStats] = useState<DriverDashboardStats>({
-    todayEarnings: 0,
-    weeklyEarnings: 0,
-    totalBookings: 0, // This will be from driver's own stats if backend provides it
-    totalRides: 0,
-    rating: 0,
-    completionRate: 0,
-    hoursOnline: 0,
-    weeklyProgress:0,
-  })
-  const [vehicle, setVehicle] = useState<Vehicle | null>(null)
+
+  // State for tracking current session online duration
+  const [sessionOnlineDuration, setSessionOnlineDuration] = useState(0) // in seconds
+  const [sessionIntervalId, setSessionIntervalId] =
+    useState<NodeJS.Timeout | null>(null)
+
+  // Mutations for updating driver status and location
+  const updateDriverStatusMutation = useUpdateDriverStatus()
+  const updateDriverLocationMutation = useUpdateDriverLocation()
 
   // Fetch global counts using TanStack Query
   const {
@@ -69,89 +100,110 @@ export default function DriverDashboard() {
     error: globalCountsError,
   } = useGlobalCounts()
 
-  // Use the new mutation hook for updating driver online status
-  const { mutate: updateDriverStatus } = useUpdateDriverStatus();
-
-  // Assuming you can get the current driver's ID from an auth context or similar
-  // For demonstration, let's use a placeholder. In a real app, this would come from your auth.
-  const DRIVER_ID = 'your-driver-id-here'; // ⭐ IMPORTANT: Replace with actual driver ID from auth context ⭐
-
+  // Effect to update local state when driverStats are fetched
   useEffect(() => {
-    loadDashboardData()
-  }, [])
+    if (driverStats && typeof driverStats.isOnline === 'boolean') {
+      setIsOnline(driverStats.isOnline)
+    }
+  }, [driverStats])
 
-  // Effect for handling online status and sending coordinates
+  // Effect to update pending rides when driverRidesData changes
   useEffect(() => {
-    let watchId: number | null = null; // To store the watchPosition ID
+    if (driverRidesData?.data) {
+      setPendingRides(
+        driverRidesData.data.filter((ride) => ride.status === 'pending'),
+      )
+      const activeRide = driverRidesData.data.find(
+        (ride) => ride.status === 'active',
+      )
+      if (activeRide) {
+        setCurrentRide(activeRide)
+      }
+    }
+  }, [driverRidesData])
 
-    const updateDriverLocation = async (
-      latitude: number,
-      longitude: number,
-    ) => {
-      try {
-        await rideshareService.updateDriverLocation(latitude, longitude)
-        console.log('Driver location updated:', latitude, longitude)
-        // No toast here as it would be too frequent, logs are sufficient.
-      } catch (error) {
-        console.error('Error updating driver location:', error)
-        // This toast can be problematic if location updates fail frequently.
-        // Consider debouncing or showing it only on initial failure.
-        toast({
-          title: 'Location Update Failed',
-          description:
-            'Could not send your location. Please check permissions.',
-          variant: 'destructive',
-        })
+  // Helper function to format duration for display
+  const formatDuration = (totalSeconds: number) => {
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`
+    } else {
+      return `${seconds}s`
+    }
+  }
+
+  // ⭐ FIX: Separate useEffect for session timer to prevent infinite loop ⭐
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null
+    if (isOnline && user?.role === UserRole.Driver) {
+      // Only start a new interval if one is not already running
+      if (sessionIntervalId === null) {
+        setSessionOnlineDuration(0) // Reset for a new session
+        interval = setInterval(() => {
+          setSessionOnlineDuration((prev) => prev + 1)
+        }, 1000)
+        setSessionIntervalId(interval)
+      }
+    } else {
+      // Clear interval when going offline or user is not a driver
+      if (sessionIntervalId) {
+        clearInterval(sessionIntervalId)
+        setSessionIntervalId(null)
+      }
+      setSessionOnlineDuration(0) // Reset duration when offline
+    }
+
+    // Cleanup function: clear the interval specific to this effect run
+    return () => {
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
+  }, [isOnline, user?.role]) // Dependencies: only isOnline and user.role
+
+  // ⭐ FIX: Separate useEffect for geolocation updates ⭐
+  useEffect(() => {
+    let watchId: number | null = null
+
+    const sendLocationUpdate = (latitude: number, longitude: number) => {
+      if (user?.role === UserRole.Driver && isOnline) {
+        updateDriverLocationMutation.mutate(
+          { latitude, longitude },
+          {
+            onError: (error) => {
+              console.error('Error updating driver location:', error)
+            },
+          },
+        )
       }
     }
 
-    const handleOnlineStatusChange = async (newIsOnline: boolean) => {
-        setIsOnline(newIsOnline); // Optimistically update UI
-        try {
-            await updateDriverStatus({ driverId: DRIVER_ID, isOnline: newIsOnline });
-            toast({
-                title: 'Status Updated',
-                description: `You are now ${newIsOnline ? 'online' : 'offline'}.`,
-                variant: 'success',
-            });
-        } catch (error) {
-            console.error('Error updating driver online status:', error);
-            toast({
-                title: 'Status Update Failed',
-                description: 'Could not update your online status on the server.',
-                variant: 'destructive',
-            });
-            setIsOnline(!newIsOnline); // Revert UI on error
-        }
-    };
-
-
-    if (isOnline) {
+    if (isOnline && user?.role === UserRole.Driver) {
       if (navigator.geolocation) {
-        // Get initial position immediately
         navigator.geolocation.getCurrentPosition(
-            (position) => {
-                updateDriverLocation(position.coords.latitude, position.coords.longitude);
-            },
-            (error) => {
-                console.error('Initial Geolocation error:', error);
-                toast({
-                    title: 'Geolocation Error',
-                    description: 'Unable to get initial location. Please enable location services.',
-                    variant: 'destructive',
-                });
-                //setIsOnline(false); // Can't go online without initial location
-            },
-            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-        );
+          (position) => {
+            sendLocationUpdate(position.coords.latitude, position.coords.longitude)
+          },
+          (error) => {
+            console.error('Initial Geolocation error:', error)
+            toast({
+              title: 'Geolocation Error',
+              description:
+                'Unable to get initial location. Please enable location services.',
+              variant: 'destructive',
+            })
+            setIsOnline(false)
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 },
+        )
 
-        // Start watching position for continuous updates
         watchId = navigator.geolocation.watchPosition(
           (position) => {
-            updateDriverLocation(
-              position.coords.latitude,
-              position.coords.longitude,
-            )
+            sendLocationUpdate(position.coords.latitude, position.coords.longitude)
           },
           (error) => {
             console.error('Geolocation error:', error)
@@ -162,8 +214,6 @@ export default function DriverDashboard() {
                 'Unable to retrieve your location. Please enable location services.',
               variant: 'destructive',
             })
-            // Optionally, set isOnline back to false if continuous geolocation fails significantly
-            // setIsOnline(false);
           },
           { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 },
         )
@@ -173,58 +223,64 @@ export default function DriverDashboard() {
           description: 'Your browser does not support geolocation.',
           variant: 'destructive',
         })
-        handleOnlineStatusChange(false); // Cannot go online without geolocation
+        setIsOnline(false)
       }
     }
 
-    // Cleanup function: stop watching position when component unmounts or goes offline
+    // Cleanup function: stop watching position
     return () => {
       if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
+        navigator.geolocation.clearWatch(watchId)
       }
-    };
-  }, [isOnline, DRIVER_ID, updateDriverStatus]); // Re-run when isOnline changes
+    }
+  }, [isOnline, user?.role, updateDriverLocationMutation]) // Dependencies for geolocation
 
-  const loadDashboardData = async () => {
-    setIsLoadingDashboard(true)
-    try {
-      const [stats, vehicleData, rides] = await Promise.all([
-        rideshareService.getDriverStats(),
-        rideshareService.getDriverVehicle(),
-        rideshareService.getDriverRides({ limit: 10, status: 'pending' }),
-      ])
-
-      setDriverStats(stats)
-      setVehicle(vehicleData)
-      setPendingRides(rides.data.filter((ride) => ride.status === 'pending'))
-
-      const activeRide = rides.data.find((ride) => ride.status === 'active')
-      if (activeRide) {
-        setCurrentRide(activeRide)
-      }
-    } catch (error: any) {
-      console.error('Error loading dashboard data:', error)
+  const handleOnlineToggle = async (checked: boolean) => {
+    if (!user || user.role !== UserRole.Driver) {
       toast({
-        title: 'Error',
-        description: 'Failed to load dashboard data. Please refresh the page.',
+        title: 'Permission Denied',
+        description: 'You must be a driver to change online status.',
         variant: 'destructive',
       })
-    } finally {
-      setIsLoadingDashboard(false)
+      return
+    }
+
+    setIsOnline(checked) // Optimistically update UI
+    try {
+      await updateDriverStatusMutation.mutateAsync({
+        isOnline: checked,
+      })
+      toast({
+        title: 'Status Updated',
+        description: `You are now ${checked ? 'online' : 'offline'}.`,
+        variant: 'default',
+      })
+    } catch (error) {
+      console.error('Error updating driver online status:', error)
+      toast({
+        title: 'Status Update Failed',
+        description: 'Could not update your online status on the server.',
+        variant: 'destructive',
+      })
+      setIsOnline(!checked) // Revert UI on error
     }
   }
 
   const handleAcceptRide = async (rideId: string) => {
     try {
-      const acceptedRide = await rideshareService.updateRideStatus(rideId, 'active')
+      const acceptedRide = await rideshareService.updateRideStatus(
+        rideId,
+        'active',
+      )
       setCurrentRide(acceptedRide)
       setPendingRides(pendingRides.filter((r) => r.id !== rideId))
-      queryClient.invalidateQueries({ queryKey: ['rides', 'pending'] }); // Invalidate pending rides cache
-      queryClient.invalidateQueries({ queryKey: ['driverStats'] }); // Refresh driver stats
+      queryClient.invalidateQueries({ queryKey: ['driverRides'] }) // Invalidate pending rides cache
+      queryClient.invalidateQueries({ queryKey: ['driverStats'] }) // Refresh driver stats
 
       toast({
         title: 'Ride Accepted',
         description: 'You have successfully accepted the ride request.',
+        variant: 'default',
       })
     } catch (error: any) {
       toast({
@@ -239,13 +295,13 @@ export default function DriverDashboard() {
     try {
       await rideshareService.updateRideStatus(rideId, 'cancelled')
       setPendingRides(pendingRides.filter((r) => r.id !== rideId))
-      queryClient.invalidateQueries({ queryKey: ['rides', 'pending'] }); // Invalidate pending rides cache
-      queryClient.invalidateQueries({ queryKey: ['driverStats'] }); // Refresh driver stats
-
+      queryClient.invalidateQueries({ queryKey: ['driverRides'] }) // Invalidate pending rides cache
+      queryClient.invalidateQueries({ queryKey: ['driverStats'] }) // Refresh driver stats
 
       toast({
         title: 'Ride Declined',
         description: 'You have declined the ride request.',
+        variant: 'default',
       })
     } catch (error: any) {
       toast({
@@ -264,12 +320,14 @@ export default function DriverDashboard() {
       setCurrentRide(null)
 
       // Refresh stats after completing ride to reflect new earnings/rides
-      queryClient.invalidateQueries({ queryKey: ['driverStats'] }); // Refresh driver stats
-      queryClient.invalidateQueries({ queryKey: ['globalAdminStats'] }); // Refresh global stats that might be affected
+      queryClient.invalidateQueries({ queryKey: ['driverStats'] }) // Refresh driver stats
+      queryClient.invalidateQueries({ queryKey: ['globalAdminStats'] }) // Refresh global stats that might be affected
+      queryClient.invalidateQueries({ queryKey: ['driverRides'] }) // Refresh driver rides
 
       toast({
         title: 'Ride Completed',
         description: 'The ride has been marked as completed.',
+        variant: 'default',
       })
     } catch (error: any) {
       toast({
@@ -282,12 +340,19 @@ export default function DriverDashboard() {
 
   const weeklyGoal = {
     target: 1500, // Example target
-    current: driverStats.weeklyEarnings,
-    percentage: Math.min((driverStats.weeklyEarnings / 1500) * 100, 100),
+    current: driverStats?.weeklyEarnings || 0, // Use optional chaining as driverStats might be undefined initially
+    percentage: Math.min(
+      ((driverStats?.weeklyEarnings || 0) / 1500) * 100,
+      100,
+    ),
   }
 
   // Combine loading states
-  const overallLoading = isLoadingDashboard || isLoadingGlobalCounts
+  const overallLoading =
+    isLoadingStats ||
+    isLoadingVehicle ||
+    isLoadingRides ||
+    isLoadingGlobalCounts
 
   if (overallLoading) {
     return (
@@ -303,7 +368,29 @@ export default function DriverDashboard() {
     )
   }
 
-  // Handle error for global counts
+  // Handle errors
+  if (statsError) {
+    toast({
+      title: 'Error loading driver stats',
+      description: statsError.message || 'Failed to fetch driver statistics.',
+      variant: 'destructive',
+    })
+  }
+  if (vehicleError) {
+    toast({
+      title: 'Error loading vehicle info',
+      description:
+        vehicleError.message || 'Failed to fetch vehicle information.',
+      variant: 'destructive',
+    })
+  }
+  if (ridesError) {
+    toast({
+      title: 'Error loading rides',
+      description: ridesError.message || 'Failed to fetch driver rides.',
+      variant: 'destructive',
+    })
+  }
   if (isErrorGlobalCounts) {
     toast({
       title: 'Error loading global stats',
@@ -311,6 +398,26 @@ export default function DriverDashboard() {
         globalCountsError?.message || 'Failed to fetch overall counts.',
       variant: 'destructive',
     })
+  }
+
+  // If user is not authenticated or not a driver, redirect or show an error
+  if (!user || user.role !== UserRole.Driver) {
+    return (
+      <div className="flex min-h-screen bg-background">
+        <DashboardSidebar userType={user?.role || 'customer'} />{' '}
+        {/* Show appropriate sidebar */}
+        <div className="flex-1 lg:ml-0 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4 text-center p-4">
+            <AlertTriangle className="w-16 h-16 text-yellow-500" />
+            <h2 className="text-2xl font-bold">Access Denied</h2>
+            <p className="text-muted-foreground">
+              You must be logged in as a driver to access this dashboard.
+            </p>
+            {/* Optionally, add a link to login or switch roles */}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -340,8 +447,9 @@ export default function DriverDashboard() {
               </div>
               <Switch
                 checked={isOnline}
-                onCheckedChange={(checked) => setIsOnline(checked)} // Pass value to state setter, useEffect handles mutation
+                onCheckedChange={handleOnlineToggle}
                 className="data-[state=checked]:bg-green-600"
+                disabled={updateDriverStatusMutation.isPending}
               />
               <div
                 className={`w-3 h-3 rounded-full ${
@@ -366,8 +474,14 @@ export default function DriverDashboard() {
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-3">
                   <Avatar>
-                    {/* Assuming user has an avatar or use a placeholder */}
-                    <AvatarImage src={currentRide.bookings?.[0]?.user?.avatarUrl || "/placeholder.svg"} />
+                    {/* Assuming ride.bookings[0].user has email for avatar generation */}
+                    <AvatarImage
+                      src={
+                        currentRide.bookings?.[0]?.user?.email
+                          ? `https://api.dicebear.com/7.x/initials/svg?seed=${currentRide.bookings[0].user.email}`
+                          : '/placeholder.svg'
+                      }
+                    />
                     <AvatarFallback>
                       {currentRide.bookings?.[0]?.user?.name?.charAt(0) || 'U'}
                     </AvatarFallback>
@@ -379,8 +493,7 @@ export default function DriverDashboard() {
                     <div className="flex items-center gap-1">
                       <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                       <span className="text-sm text-muted-foreground">
-                        {/* Using driverStats.rating as current customer rating is not directly on ride */}
-                        {driverStats.rating.toFixed(1) || 'N/A'}
+                        {driverStats?.rating?.toFixed(1) || 'N/A'}
                       </span>
                     </div>
                   </div>
@@ -446,7 +559,7 @@ export default function DriverDashboard() {
                       Today's Earnings
                     </p>
                     <p className="text-2xl font-bold text-green-600">
-                      ${driverStats.todayEarnings.toFixed(2)}
+                      ${driverStats?.todayEarnings?.toFixed(2) || '0.00'}
                     </p>
                   </div>
                   <DollarSign className="w-8 h-8 text-green-600" />
@@ -462,7 +575,7 @@ export default function DriverDashboard() {
                       Total Rides (Driver)
                     </p>
                     <p className="text-2xl font-bold">
-                      {driverStats.totalRides}
+                      {driverStats?.totalRides || 0}
                     </p>
                   </div>
                   <Car className="w-8 h-8 text-blue-600" />
@@ -478,8 +591,15 @@ export default function DriverDashboard() {
                       Hours Online
                     </p>
                     <p className="text-2xl font-bold">
-                      {driverStats.hoursOnline}h
+                      {isOnline
+                        ? formatDuration(sessionOnlineDuration)
+                        : `${driverStats?.hoursOnline || 0}h`}
                     </p>
+                    {isOnline && (
+                      <p className="text-xs text-muted-foreground">
+                        Current session
+                      </p>
+                    )}
                   </div>
                   <Clock className="w-8 h-8 text-purple-600" />
                 </div>
@@ -494,7 +614,7 @@ export default function DriverDashboard() {
                       Average Rating
                     </p>
                     <p className="text-2xl font-bold flex items-center gap-1">
-                      {driverStats.rating.toFixed(1)}
+                      {driverStats?.rating?.toFixed(1) || 'N/A'}
                       <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
                     </p>
                   </div>
@@ -511,7 +631,7 @@ export default function DriverDashboard() {
                       Completion Rate
                     </p>
                     <p className="text-2xl font-bold text-green-600">
-                      {driverStats.completionRate.toFixed(1)}%
+                      {driverStats?.completionRate?.toFixed(1) || '0.0'}%
                     </p>
                   </div>
                   <TrendingUp className="w-8 h-8 text-green-600" />
@@ -583,7 +703,13 @@ export default function DriverDashboard() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <Avatar>
-                          <AvatarImage src={ride.bookings?.[0]?.user?.avatarUrl || "/placeholder.svg"} />
+                          <AvatarImage
+                            src={
+                              ride.bookings?.[0]?.user?.email
+                                ? `https://api.dicebear.com/7.x/initials/svg?seed=${ride.bookings[0].user.email}`
+                                : '/placeholder.svg'
+                            }
+                          />
                           <AvatarFallback>
                             {ride.bookings?.[0]?.user?.name?.charAt(0) || 'U'}
                           </AvatarFallback>
@@ -595,8 +721,7 @@ export default function DriverDashboard() {
                           <div className="flex items-center gap-1">
                             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                             <span className="text-sm text-muted-foreground">
-                              {/* Using driverStats.rating as current customer rating is not directly on ride */}
-                              {driverStats.rating.toFixed(1) || 'N/A'}
+                              {driverStats?.rating?.toFixed(1) || 'N/A'}
                             </span>
                           </div>
                         </div>
@@ -661,32 +786,32 @@ export default function DriverDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {vehicle ? (
+                {driverVehicle ? (
                   <>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">
-                        {vehicle.model} {vehicle.year}
+                        {driverVehicle.model} {driverVehicle.year}
                       </span>
                       <Badge
                         variant={
-                          vehicle.status === 'available'
+                          driverVehicle.status === 'available'
                             ? 'default'
                             : 'secondary'
                         }
                       >
-                        {vehicle.status}
+                        {driverVehicle.status}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">License Plate</span>
                       <span className="text-sm font-medium">
-                        {vehicle.licensePlate}
+                        {driverVehicle.licensePlate}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Vehicle Type</span>
                       <span className="text-sm font-medium capitalize">
-                        {vehicle.type}
+                        {driverVehicle.type}
                       </span>
                     </div>
                   </>
@@ -721,7 +846,7 @@ export default function DriverDashboard() {
                 <Button
                   variant="outline"
                   className="w-full justify-start"
-                  onClick={loadDashboardData}
+                  onClick={() => queryClient.invalidateQueries()} // Invalidate all queries to refresh data
                 >
                   <MapPin className="w-4 h-4 mr-2" />
                   Refresh Data

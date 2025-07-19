@@ -74,6 +74,7 @@
     "react-leaflet": "^5.0.0",
     "react-resizable-panels": "^3.0.3",
     "recharts": "^3.1.0",
+    "socket.io-client": "^4.8.1",
     "sonner": "^2.0.6",
     "tailwind-merge": "^3.0.2",
     "vaul": "^1.1.2"

@@ -3,7 +3,6 @@ import { api } from './api'; // Assuming 'api' is your configured axios instance
 import type {
   User,
   Vehicle,
-  Driver,
   Route,
   Ride,
   Booking,
@@ -15,108 +14,131 @@ import type {
   ApiResponse,
   VehicleType,
   VehicleStatus,
-  CreateUserRequest,
+  CreateUserRequest, // Used for creating users, including drivers
+  UserRole, // Import UserRole for type safety
   DriverDashboardStats,
 } from './types';
 
 class RideshareService {
-  // Add this to your RideshareService class
-  async getAdminStats() {
+  constructor() {
+    // ⭐ NEW DEBUG LOG: Confirm service instance and available methods ⭐
+    console.log("RideshareService instance created.");
+    console.log("  Methods available:", Object.keys(Object.getPrototypeOf(this)));
+    console.log("  updateDriverStatus available:", typeof this.updateDriverStatus === 'function');
+    console.log("  updateDriverLocation available:", typeof this.updateDriverLocation === 'function');
+  }
+
+  // Admin Stats
+  async getAdminStats(): Promise<DriverDashboardStats> {
     try {
-      const res = await api.get('/admin/stats');
-      return res.data;
-    } catch (error) {
-      console.error('Error fetching admin stats:', error);
+      const res = await api.get<ApiResponse<DriverDashboardStats>>('/admin/stats');
       return {
-        totalUsers: 0,
-        activeDrivers: 0,
-        totalVehicles: 0,
-        monthlyRevenue: 0,
-        totalRides: 0,
-        totalBookings: 0,
-        completionRate: 0,
-        averageRating: 0,
-        supportTickets: 0,
+        totalUsers: res.data.data.totalUsers || 0,
+        activeDrivers: res.data.data.activeDrivers || 0,
+        totalVehicles: res.data.data.totalVehicles || 0,
+        monthlyRevenue: res.data.data.monthlyRevenue || 0,
+        totalRides: res.data.data.totalRides || 0,
+        totalBookings: res.data.data.totalBookings || 0,
+        completionRate: res.data.data.completionRate || 0,
+        averageRating: res.data.data.averageRating || 0,
+        supportTickets: res.data.data.supportTickets || 0,
+        todayEarnings: res.data.data.todayEarnings || 0,
+        weeklyEarnings: res.data.data.weeklyEarnings || 0,
+        rating: res.data.data.rating || 0,
+        hoursOnline: res.data.data.hoursOnline || 0,
+        weeklyProgress: res.data.data.weeklyProgress || 0,
+        isOnline: res.data.data.isOnline || false,
+      };
+    } catch (error: any) {
+      console.error('Error fetching admin stats:', error.response?.data || error.message || error);
+      return {
+        totalUsers: 0, activeDrivers: 0, totalVehicles: 0, monthlyRevenue: 0,
+        totalRides: 0, totalBookings: 0, completionRate: 0, averageRating: 0,
+        supportTickets: 0, todayEarnings: 0, weeklyEarnings: 0, rating: 0,
+        hoursOnline: 0, weeklyProgress: 0, isOnline: false,
       };
     }
   }
 
-  // Adjusted getDriverStats to match usage in DriverDashboard.tsx
-  // Assumes backend infers driverId from authentication, or you'll need to pass it
   async getDriverStats(): Promise<DriverDashboardStats> {
     try {
-      // Assuming the API endpoint for driver stats doesn't require a driverId if authenticated
-      const res = await api.get(`/drivers/me/stats`); // Or just '/driver/stats' depending on your API
-      return res.data;
-    } catch (error) {
-      console.error(`Error fetching driver stats:`, error);
-      // Return default/empty stats in case of an error
+      console.log('dashboard-service: Sending GET /users/me request. Authorization Header:', api.defaults.headers.common['Authorization']);
+      const res = await api.get<ApiResponse<User>>(`/users/me`);
+      const userData = res.data.data;
       return {
-        todayEarnings: 0, // Added based on DriverDashboard usage
-        weeklyEarnings: 0, // Added based on DriverDashboard usage
-        totalBookings: 0, // Added based on DriverDashboard usage (if applicable to driver)
-        totalRides: 0, // Maps to totalRidesCompleted
-        rating: 0, // Maps to averageRating
-        completionRate: 0, // Mapped to completionRate
-        hoursOnline: 0, // Maps to totalHoursOnline
+        todayEarnings: 0, weeklyEarnings: 0, totalBookings: 0,
+        totalRides: userData.totalRidesCompleted || 0,
+        rating: userData.averageRating || 0,
+        completionRate: 0, hoursOnline: 0, weeklyProgress: 0,
+        isOnline: userData.isOnline || false,
+        totalUsers: 0, activeDrivers: 0, totalVehicles: 0,
+        monthlyRevenue: 0, supportTickets: 0, averageRating: userData.averageRating || 0,
+      };
+    } catch (error: any) {
+      console.error(`Error fetching driver stats from /users/me:`, error.response?.data || error.message || error);
+      return {
+        todayEarnings: 0, weeklyEarnings: 0, totalBookings: 0,
+        totalRides: 0, rating: 0, completionRate: 0, hoursOnline: 0,
+        weeklyProgress: 0, isOnline: false, totalUsers: 0,
+        activeDrivers: 0, totalVehicles: 0, monthlyRevenue: 0,
+        supportTickets: 0, averageRating: 0,
       };
     }
   }
 
-  // ⭐ NEW METHOD: updateDriverLocation ⭐
   async updateDriverLocation(latitude: number, longitude: number): Promise<void> {
     try {
-      await api.post('/drivers/location', { latitude, longitude });
+      await api.post('/users/location', { latitude, longitude });
       console.log('Driver location updated successfully on server.');
-    } catch (error) {
-      console.error('Error sending driver location to server:', error);
-      throw error; // Re-throw to be caught by the component
-    }
-  }
-
-  // ⭐ NEW METHOD: updateRideStatus ⭐
-  async updateRideStatus(rideId: string, status: string): Promise<Ride> {
-    try {
-      const res = await api.patch<ApiResponse<Ride>>(`/rides/${rideId}/status`, { status });
-      return res.data.data;
-    } catch (error) {
-      console.error(`Error updating ride ${rideId} status to ${status}:`, error);
+    } catch (error: any) {
+      console.error('Error sending driver location to server:', error.response?.data || error.message || error);
       throw error;
     }
   }
 
-  // ⭐ NEW METHOD: getDriverVehicle ⭐
+  async updateDriverStatus(isOnline: boolean): Promise<void> {
+    try {
+      await api.patch('/users/me/status', { isOnline });
+      console.log('Driver status updated successfully on server.');
+    } catch (error: any) {
+      console.error('Error updating driver status on server:', error.response?.data || error.message || error);
+      throw error;
+    }
+  }
+
+  async updateRideStatus(rideId: string, status: string): Promise<Ride> {
+    try {
+      const res = await api.patch<ApiResponse<Ride>>(`/rides/${rideId}/status`, { status });
+      return res.data.data;
+    } catch (error: any) {
+      console.error(`Error updating ride ${rideId} status to ${status}:`, error.response?.data || error.message || error);
+      throw error;
+    }
+  }
+
   async getDriverVehicle(): Promise<Vehicle | null> {
     try {
-      const res = await api.get<ApiResponse<Vehicle>>('/drivers'); // Assuming endpoint to get current driver's vehicle
-      return res.data.data;
-    } catch (error) {
-      console.error('Error fetching driver vehicle:', error);
+      const res = await api.get<ApiResponse<Vehicle | null>>('/users/me/vehicle');
+      return res.data.data || null;
+    } catch (error: any) {
+      console.error('Error fetching driver vehicle:', error.response?.data || error.message || error);
       return null;
     }
   }
 
-  // ⭐ NEW METHOD: getDriverRides (for pending/active rides for a specific driver) ⭐
   async getDriverRides(params?: {
     page?: number;
     limit?: number;
     status?: string;
   }): Promise<PaginatedResponse<Ride>> {
     try {
-      // Assuming an endpoint to get rides specific to the authenticated driver
-      const res = await api.get<PaginatedResponse<Ride>>('/drivers', { params });
-      return res.data; // Assuming this endpoint already returns a PaginatedResponse
-    } catch (error) {
-      console.error('Error fetching driver rides:', error);
+      const res = await api.get<PaginatedResponse<Ride>>('/users/me/rides', { params });
+      return res.data;
+    } catch (error: any) {
+      console.error('Error fetching driver rides:', error.response?.data || error.message || error);
       return {
-        data: [],
-        items: [],
-        total: 0,
-        page: params?.page || 1,
-        limit: params?.limit || 10,
-        totalPages: 0,
-        hasNextPage: false,
-        hasPreviousPage: false,
+        data: [], items: [], total: 0, page: params?.page || 1, limit: params?.limit || 10,
+        totalPages: 0, hasNextPage: false, hasPreviousPage: false,
       };
     }
   }
@@ -125,62 +147,51 @@ class RideshareService {
   async getUsers(params?: {
     page?: number;
     limit?: number;
-    role?: string;
-    q?: string; // Existing general search
-    email?: string; // ⭐ Add email specific search ⭐
+    role?: UserRole;
+    q?: string;
+    email?: string;
   }): Promise<PaginatedResponse<User>> {
     const currentPage = params?.page || 1;
     const currentLimit = params?.limit || 10;
-
     try {
-      const res = await api.get<User[]>(
-        '/users',
-        { params },
-      );
-
-      const rawUsersArray = res.data;
-      const totalItems = rawUsersArray.length;
-      const totalPages = totalItems > 0 && currentLimit > 0 ? Math.ceil(totalItems / currentLimit) : 0;
-
-      const paginatedResponse: PaginatedResponse<User> = {
-        items: rawUsersArray,
-        total: totalItems,
-        data: rawUsersArray,
-        page: currentPage,
-        limit: currentLimit,
-        totalPages: totalPages,
-        hasNextPage: currentPage < totalPages,
-        hasPreviousPage: currentPage > 1,
-      };
+      const res = await api.get<PaginatedResponse<User>>('/users', { params });
+      const paginatedResponse = res.data;
+      console.log("✅ getUsers API call successful. Data:", paginatedResponse);
       return paginatedResponse;
-    } catch (error) {
-      console.error("❌ getUsers API call failed. Error:", error);
+    } catch (error: any) {
+      console.error("❌ getUsers API call failed. Error:", error.response?.data || error.message || error);
       throw error;
     }
   }
 
-  // ⭐ New createUser method ⭐
   async createUser(data: CreateUserRequest): Promise<User> {
     try {
       const res = await api.post<User>('/users', data);
-
-      console.log(" createUser API call successful. Data:", res.data);
+      console.log("✅ createUser API call successful. Data:", res.data);
       return res.data;
-    } catch (error) {
-      console.error(" createUser API call failed. Error:", error);
+    } catch (error: any) {
+      console.error("❌ createUser API call failed. Error:", error.response?.data || error.message || error);
       throw error;
     }
   }
 
-
-  async updateUser(id: string, data: Partial<User>) {
-    const res = await api.patch<ApiResponse<User>>(`/users/${id}`, data);
-    return res.data.data;
+  async updateUser(id: string, data: Partial<User>): Promise<User> {
+    try {
+      const res = await api.patch<ApiResponse<User>>(`/users/${id}`, data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ updateUser API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async deleteUser(id: string) {
-    const res = await api.delete<ApiResponse<User>>(`/users/${id}`);
-    return res.data.data;
+  async deleteUser(id: string): Promise<void> {
+    try {
+      await api.delete<ApiResponse<void>>(`/users/${id}`);
+    } catch (error: any) {
+      console.error("❌ deleteUser API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
   // VEHICLES
@@ -190,165 +201,125 @@ class RideshareService {
     type?: VehicleType;
     status?: VehicleStatus;
     q?: string;
-  }): Promise<PaginatedResponse<Vehicle>> { // ⭐ Explicitly declare return type as PaginatedResponse<Vehicle> ⭐
-    const currentPage = params?.page || 1;
-    const currentLimit = params?.limit || 10;
-
+  }): Promise<PaginatedResponse<Vehicle>> {
     try {
-      // Your API consistently returns a plain array: Vehicle[]
-      const res = await api.get<Vehicle[]>(
-        '/vehicles',
-        { params },
-      );
-
-      const rawVehiclesArray = res.data; // This is your [Vehicle, Vehicle, ...] array
-      console.log(" getVehicles API call successful. Raw Data (Array):", rawVehiclesArray);
-
-      // ⭐ Manually construct the PaginatedResponse<Vehicle> here ⭐
-      const totalItems = rawVehiclesArray.length; // If your API doesn't provide total, use array length
-      const totalPages = totalItems > 0 && currentLimit > 0 ? Math.ceil(totalItems / currentLimit) : 0;
-
-      const paginatedResponse: PaginatedResponse<Vehicle> = {
-        items: rawVehiclesArray,
-        total: totalItems,
-        data: rawVehiclesArray, // Often 'data' property mirrors 'items'
-        page: currentPage,
-        limit: currentLimit,
-        totalPages: totalPages,
-        // Add any other properties defined in your PaginatedResponse<Vehicle>
-        // with sensible default/derived values.
-        hasNextPage: currentPage < totalPages,
-        hasPreviousPage: currentPage > 1,
-      };
-
-      console.log("⭐ getVehicles API call: Formatted PaginatedResponse:", paginatedResponse);
-      return paginatedResponse; // Return the fully formed paginated object
-
-    } catch (error) {
-      console.error("❌ getVehicles API call failed. Error:", error);
-
-      throw error;
-    }
-  }
-
-  async createVehicle(data: Partial<Vehicle>) {
-    const res = await api.post<ApiResponse<Vehicle>>('/vehicles', data);
-    return res.data.data;
-  }
-
-  async updateVehicle(id: string, data: Partial<Vehicle>) {
-    const res = await api.patch<ApiResponse<Vehicle>>(`/vehicles/${id}`, data);
-    return res.data.data;
-  }
-
-  async deleteVehicle(id: string) {
-    const res = await api.delete<ApiResponse<Vehicle>>(`/vehicles/${id}`);
-    return res.data.data;
-  }
-
-  // DRIVERS
-  async getDrivers(params?: {
-    page?: number;
-    limit?: number;
-    q?: string; // General search
-    // Add other filter parameters like status, vehicleId etc. if your API supports them
-  }): Promise<PaginatedResponse<Driver>> {
-    const currentPage = params?.page || 1;
-    const currentLimit = params?.limit || 10;
-
-    try {
-      // Assuming your API for drivers also returns a plain array: Driver[]
-      const res = await api.get<Driver[]>(
-        '/drivers',
-        { params },
-      );
-
-      const rawDriversArray = res.data;
-      console.log("✅ getDrivers API call successful. Raw Data (Array):", rawDriversArray);
-
-      const totalItems = rawDriversArray.length; // Or fetch from headers if API provides total count
-      const totalPages = totalItems > 0 && currentLimit > 0 ? Math.ceil(totalItems / currentLimit) : 0;
-
-      const paginatedResponse: PaginatedResponse<Driver> = {
-        items: rawDriversArray,
-        total: totalItems,
-        data: rawDriversArray,
-        page: currentPage,
-        limit: currentLimit,
-        totalPages: totalPages,
-        hasNextPage: currentPage < totalPages,
-        hasPreviousPage: currentPage > 1,
-      };
-
-      console.log("⭐ getDrivers API call: Formatted PaginatedResponse:", paginatedResponse);
+      const res = await api.get<PaginatedResponse<Vehicle>>('/vehicles', { params });
+      const paginatedResponse = res.data;
+      console.log("✅ getVehicles API call successful. Data:", paginatedResponse);
       return paginatedResponse;
-
-    } catch (error) {
-      console.error(" getDrivers API call failed. Error:", error);
+    } catch (error: any) {
+      console.error("❌ getVehicles API call failed. Error:", error.response?.data || error.message || error);
       throw error;
     }
   }
 
-  async createDriver(data: Partial<Driver>) {
-    const res = await api.post<ApiResponse<Driver>>('/drivers', data);
-    return res.data.data;
+  async createVehicle(data: Partial<Vehicle>): Promise<Vehicle> {
+    try {
+      const res = await api.post<ApiResponse<Vehicle>>('/vehicles', data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ createVehicle API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async updateDriver(id: string, data: Partial<Driver>) {
-    const res = await api.patch<ApiResponse<Driver>>(`/drivers/${id}`, data);
-    return res.data.data;
+  async updateVehicle(id: string, data: Partial<Vehicle>): Promise<Vehicle> {
+    try {
+      const res = await api.patch<ApiResponse<Vehicle>>(`/vehicles/${id}`, data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ updateVehicle API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async deleteDriver(id: string) {
-    const res = await api.delete<ApiResponse<Driver>>(`/drivers/${id}`);
-    return res.data.data;
+  async deleteVehicle(id: string): Promise<void> {
+    try {
+      await api.delete<ApiResponse<void>>(`/vehicles/${id}`);
+    } catch (error: any) {
+      console.error("❌ deleteVehicle API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
   // ROUTES
-  async getRoutes(params?: { page?: number; limit?: number }) {
-    const res = await api.get<ApiResponse<PaginatedResponse<Route>>>(
-      '/routes',
-      { params },
-    );
-    return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+  async getRoutes(params?: { page?: number; limit?: number }): Promise<PaginatedResponse<Route>> {
+    try {
+      const res = await api.get<ApiResponse<PaginatedResponse<Route>>>('/routes', { params });
+      return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+    } catch (error: any) {
+      console.error("❌ getRoutes API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async createRoute(data: Partial<Route>) {
-    const res = await api.post<ApiResponse<Route>>('/routes', data);
-    return res.data.data;
+  async createRoute(data: Partial<Route>): Promise<Route> {
+    try {
+      const res = await api.post<ApiResponse<Route>>('/routes', data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ createRoute API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async updateRoute(id: string, data: Partial<Route>) {
-    const res = await api.patch<ApiResponse<Route>>(`/routes/${id}`, data);
-    return res.data.data;
+  async updateRoute(id: string, data: Partial<Route>): Promise<Route> {
+    try {
+      const res = await api.patch<ApiResponse<Route>>(`/routes/${id}`, data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ updateRoute API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async deleteRoute(id: string) {
-    const res = await api.delete<ApiResponse<Route>>(`/routes/${id}`);
-    return res.data.data;
+  async deleteRoute(id: string): Promise<void> {
+    try {
+      await api.delete<ApiResponse<void>>(`/routes/${id}`);
+    } catch (error: any) {
+      console.error("❌ deleteRoute API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
   // RIDES
-  async getRides(params?: { page?: number; limit?: number; status?: string }) {
-    const res = await api.get<ApiResponse<PaginatedResponse<Ride>>>('/rides', {
-      params,
-    });
-    return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+  async getRides(params?: { page?: number; limit?: number; status?: string }): Promise<PaginatedResponse<Ride>> {
+    try {
+      const res = await api.get<ApiResponse<PaginatedResponse<Ride>>>('/rides', { params });
+      return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+    } catch (error: any) {
+      console.error("❌ getRides API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async createRide(data: Partial<Ride>) {
-    const res = await api.post<ApiResponse<Ride>>('/rides', data);
-    return res.data.data;
+  async createRide(data: Partial<Ride>): Promise<Ride> {
+    try {
+      const res = await api.post<ApiResponse<Ride>>('/rides', data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ createRide API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async updateRide(id: string, data: Partial<Ride>) {
-    const res = await api.patch<ApiResponse<Ride>>(`/rides/${id}`, data);
-    return res.data.data;
+  async updateRide(id: string, data: Partial<Ride>): Promise<Ride> {
+    try {
+      const res = await api.patch<ApiResponse<Ride>>(`/rides/${id}`, data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ updateRide API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async deleteRide(id: string) {
-    const res = await api.delete<ApiResponse<Ride>>(`/rides/${id}`);
-    return res.data.data;
+  async deleteRide(id: string): Promise<void> {
+    try {
+      await api.delete<ApiResponse<void>>(`/rides/${id}`);
+    } catch (error: any) {
+      console.error("❌ deleteRide API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
   // BOOKINGS
@@ -356,28 +327,44 @@ class RideshareService {
     page?: number;
     limit?: number;
     status?: string;
-    type?: string; // Add type filter here if your API supports it
-  }) {
-    const res = await api.get<ApiResponse<PaginatedResponse<Booking>>>(
-      '/bookings',
-      { params },
-    );
-    return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+    type?: string;
+  }): Promise<PaginatedResponse<Booking>> {
+    try {
+      const res = await api.get<ApiResponse<PaginatedResponse<Booking>>>('/bookings', { params });
+      return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+    } catch (error: any) {
+      console.error("❌ getBookings API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async createBooking(data: Partial<Booking>) {
-    const res = await api.post<ApiResponse<Booking>>('/bookings', data);
-    return res.data.data;
+  async createBooking(data: Partial<Booking>): Promise<Booking> {
+    try {
+      const res = await api.post<ApiResponse<Booking>>('/bookings', data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ createBooking API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async updateBooking(id: string, data: Partial<Booking>) {
-    const res = await api.patch<ApiResponse<Booking>>(`/bookings/${id}`, data);
-    return res.data.data;
+  async updateBooking(id: string, data: Partial<Booking>): Promise<Booking> {
+    try {
+      const res = await api.patch<ApiResponse<Booking>>(`/bookings/${id}`, data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ updateBooking API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async deleteBooking(id: string) {
-    const res = await api.delete<ApiResponse<Booking>>(`/bookings/${id}`);
-    return res.data.data;
+  async deleteBooking(id: string): Promise<void> {
+    try {
+      await api.delete<ApiResponse<void>>(`/bookings/${id}`);
+    } catch (error: any) {
+      console.error("❌ deleteBooking API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
   // DELIVERIES
@@ -392,63 +379,93 @@ class RideshareService {
     try {
       const res = await api.get<PaginatedResponse<Delivery>>('/deliveries', { params });
       return res.data;
-    } catch (error) {
-      console.error(" getDeliveries API call failed. Error:", error);
+    } catch (error: any) {
+      console.error("❌ getDeliveries API call failed. Error:", error.response?.data || error.message || error);
       throw error;
     }
   };
 
-  // Example for fetching a single delivery if needed later
   async getDeliveryById(id: string): Promise<Delivery> {
     try {
       const res = await api.get<Delivery>(`/deliveries/${id}`);
       return res.data;
-    } catch (error) {
-      console.error(` getDeliveryById API call for ID ${id} failed. Error:`, error);
+    }
+    catch (error: any) {
+      console.error(`❌ getDeliveryById API call for ID ${id} failed. Error:`, error.response?.data || error.message || error);
       throw error;
     }
   };
 
-  async createDelivery(data: Partial<Delivery>) {
-    const res = await api.post<ApiResponse<Delivery>>('/deliveries', data);
-    return res.data.data;
+  async createDelivery(data: Partial<Delivery>): Promise<Delivery> {
+    try {
+      const res = await api.post<ApiResponse<Delivery>>('/deliveries', data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ createDelivery API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async updateDelivery(id: string, data: Partial<Delivery>) {
-    const res = await api.patch<ApiResponse<Delivery>>(
-      `/deliveries/${id}`,
-      data,
-    );
-    return res.data.data;
+  async updateDelivery(id: string, data: Partial<Delivery>): Promise<Delivery> {
+    try {
+      const res = await api.patch<ApiResponse<Delivery>>(
+        `/deliveries/${id}`,
+        data,
+      );
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ updateDelivery API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async deleteDelivery(id: string) {
-    const res = await api.delete<ApiResponse<Delivery>>(`/deliveries/${id}`);
-    return res.data.data;
+  async deleteDelivery(id: string): Promise<void> {
+    try {
+      await api.delete<ApiResponse<void>>(`/deliveries/${id}`);
+    } catch (error: any) {
+      console.error("❌ deleteDelivery API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
   // PAYMENTS
-  async getPayments(params?: { page?: number; limit?: number; status?: string }) { // Added status filter based on common use case
-    const res = await api.get<ApiResponse<PaginatedResponse<Payment>>>(
-      '/payments',
-      { params },
-    );
-    return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+  async getPayments(params?: { page?: number; limit?: number; status?: string }): Promise<PaginatedResponse<Payment>> {
+    try {
+      const res = await api.get<ApiResponse<PaginatedResponse<Payment>>>('/payments', { params });
+      return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+    } catch (error: any) {
+      console.error("❌ getPayments API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async createPayment(data: Partial<Payment>) {
-    const res = await api.post<ApiResponse<Payment>>('/payments', data);
-    return res.data.data;
+  async createPayment(data: Partial<Payment>): Promise<Payment> {
+    try {
+      const res = await api.post<ApiResponse<Payment>>('/payments', data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ createPayment API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async updatePayment(id: string, data: Partial<Payment>) {
-    const res = await api.patch<ApiResponse<Payment>>(`/payments/${id}`, data);
-    return res.data.data;
+  async updatePayment(id: string, data: Partial<Payment>): Promise<Payment> {
+    try {
+      const res = await api.patch<ApiResponse<Payment>>(`/payments/${id}`, data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ updatePayment API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async deletePayment(id: string) {
-    const res = await api.delete<ApiResponse<Payment>>(`/payments/${id}`);
-    return res.data.data;
+  async deletePayment(id: string): Promise<void> {
+    try {
+      await api.delete<ApiResponse<void>>(`/payments/${id}`);
+    } catch (error: any) {
+      console.error("❌ deletePayment API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
   // REVIEWS
@@ -456,27 +473,43 @@ class RideshareService {
     page?: number;
     limit?: number;
     driverId?: string;
-  }) {
-    const res = await api.get<ApiResponse<PaginatedResponse<Review>>>(
-      '/reviews',
-      { params },
-    );
-    return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+  }): Promise<PaginatedResponse<Review>> {
+    try {
+      const res = await api.get<ApiResponse<PaginatedResponse<Review>>>('/reviews', { params });
+      return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+    } catch (error: any) {
+      console.error("❌ getReviews API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async createReview(data: Partial<Review>) {
-    const res = await api.post<ApiResponse<Review>>('/reviews', data);
-    return res.data.data;
+  async createReview(data: Partial<Review>): Promise<Review> {
+    try {
+      const res = await api.post<ApiResponse<Review>>('/reviews', data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ createReview API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async updateReview(id: string, data: Partial<Review>) {
-    const res = await api.patch<ApiResponse<Review>>(`/reviews/${id}`, data);
-    return res.data.data;
+  async updateReview(id: string, data: Partial<Review>): Promise<Review> {
+    try {
+      const res = await api.patch<ApiResponse<Review>>(`/reviews/${id}`, data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ updateReview API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async deleteReview(id: string) {
-    const res = await api.delete<ApiResponse<Review>>(`/reviews/${id}`);
-    return res.data.data;
+  async deleteReview(id: string): Promise<void> {
+    try {
+      await api.delete<ApiResponse<void>>(`/reviews/${id}`);
+    } catch (error: any) {
+      console.error("❌ deleteReview API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
   // NOTIFICATIONS
@@ -484,23 +517,35 @@ class RideshareService {
     page?: number;
     limit?: number;
     isRead?: boolean;
-    userId?: string; // Added userId for filtering notifications
-  }) {
-    const res = await api.get<ApiResponse<PaginatedResponse<Notification>>>(
-      '/notifications',
-      { params },
-    );
-    return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+    userId?: string;
+  }): Promise<PaginatedResponse<Notification>> {
+    try {
+      const res = await api.get<ApiResponse<PaginatedResponse<Notification>>>('/notifications', { params });
+      return res.data?.data ?? { data: [], total: 0, page: params?.page || 1, limit: params?.limit || 10, totalPages: 0 };
+    } catch (error: any) {
+      console.error("❌ getNotifications API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async markNotificationAsRead(notificationId: string) {
-    const res = await api.patch<ApiResponse<Notification>>(`/notifications/${notificationId}/read`);
-    return res.data.data; // Assuming it returns the updated notification
+  async markNotificationAsRead(notificationId: string): Promise<Notification> {
+    try {
+      const res = await api.patch<ApiResponse<Notification>>(`/notifications/${notificationId}/read`);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ markNotificationAsRead API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 
-  async createNotification(data: Partial<Notification>) {
-    const res = await api.post<ApiResponse<Notification>>('/notifications', data);
-    return res.data.data;
+  async createNotification(data: Partial<Notification>): Promise<Notification> {
+    try {
+      const res = await api.post<ApiResponse<Notification>>('/notifications', data);
+      return res.data.data;
+    } catch (error: any) {
+      console.error("❌ createNotification API call failed. Error:", error.response?.data || error.message || error);
+      throw error;
+    }
   }
 }
 

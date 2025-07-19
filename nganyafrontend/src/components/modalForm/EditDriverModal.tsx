@@ -5,38 +5,39 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useCreateDriver, useUpdateDriver, useUsers, useVehicles, useCreateUser, useCreateVehicle } from '@/useHooks';
+import { useCreateUser, useUpdateUser, useUsers, useVehicles, useCreateVehicle } from '@/useHooks'; // useUpdateUser instead of useUpdateDriver
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { VehicleType, VehicleStatus, type Driver } from '@/lib/types';
+import { VehicleType, VehicleStatus, type User, UserRole } from '@/lib/types'; // Import User, UserRole, remove Driver
 import { rideshareService } from '@/lib/dashboard-service';
 
 interface EditDriverModalProps {
-  driver?: Driver | null;
+  driver?: User | null; // Changed type to User
   onClose: () => void;
   onSave: () => void;
 }
 
 export default function EditDriverModal({ driver, onClose, onSave }: EditDriverModalProps) {
-  const [formData, setFormData] = useState({
-    userId: driver?.userId || '',
-    licenseNumber: driver?.licenseNumber || '',
-    vehicleId: driver?.vehicleId || '',
-    rating: driver?.rating || 0,
+  // State for driver-specific fields (from User entity)
+  const [driverFormData, setDriverFormData] = useState({
+    licenseNumber: driver?.driverLicenseNumber || '',
+    vehicleId: driver?.assignedVehicleId || '',
+    rating: driver?.averageRating || 0,
+  });
+
+  // State for user-specific fields (from User entity) when editing or creating a new user for a driver
+  const [userFormData, setUserFormData] = useState({
+    firstName: driver?.firstName || '',
+    lastName: driver?.lastName || '',
+    email: driver?.email || '',
+    phone: driver?.phone || '',
   });
 
   const [createNewUser, setCreateNewUser] = useState(false);
-  const [newUserData, setNewUserData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-  });
-
   const [createNewVehicle, setCreateNewVehicle] = useState(false);
   const [newVehicleData, setNewVehicleData] = useState({
     licensePlate: '',
     model: '',
-    year: 2023, // Default numerical value
+    year: new Date().getFullYear(), // Default numerical value
     type: '' as VehicleType,
     status: VehicleStatus.Available,
   });
@@ -45,107 +46,108 @@ export default function EditDriverModal({ driver, onClose, onSave }: EditDriverM
 
   const isEditing = !!driver;
 
-  const createDriverMutation = useCreateDriver();
-  const updateDriverMutation = useUpdateDriver();
   const createUserMutation = useCreateUser();
+  const updateDriverMutation = useUpdateUser(); // This is actually updateUser
   const createVehicleMutation = useCreateVehicle();
 
-  const { data: usersData, isLoading: isLoadingUsers } = useUsers(1, 1000);
+  const { data: usersData, isLoading: isLoadingUsers } = useUsers(1, 1000, UserRole.Customer); // Only fetch customers for new driver assignment
   const { data: vehiclesData, isLoading: isLoadingVehicles } = useVehicles(1, 1000);
 
-  const availableUsers = usersData?.items || [];
-  const availableVehicles = vehiclesData?.items || [];
+  const availableUsers = usersData?.data || []; // Access 'data' from PaginatedResponse
+  const availableVehicles = vehiclesData?.data || []; // Access 'data' from PaginatedResponse
 
   useEffect(() => {
     if (driver) {
-      setFormData({
-        userId: driver.userId,
-        licenseNumber: driver.licenseNumber,
-        vehicleId: driver.vehicleId || '',
-        rating: driver.rating,
+      // When editing an existing driver
+      setDriverFormData({
+        licenseNumber: driver.driverLicenseNumber || '',
+        vehicleId: driver.assignedVehicleId || '',
+        rating: driver.averageRating || 0,
       });
-      setCreateNewUser(false);
-      setCreateNewVehicle(false); // Ensure this is false for editing existing driver
-      setNewUserData({ firstName: '', lastName: '', email: '', phone: '' });
-      setNewVehicleData({ licensePlate: '', model: '', year: 2023, type: '' as VehicleType, status: VehicleStatus.Available });
+      setUserFormData({
+        firstName: driver.firstName || '',
+        lastName: driver.lastName || '',
+        email: driver.email || '',
+        phone: driver.phone || '',
+      });
+      setCreateNewUser(false); // Cannot create new user when editing existing
+      setCreateNewVehicle(false); // Cannot create new vehicle when editing existing driver's association
     } else {
-      // For adding a new driver, clear all relevant states
-      setFormData({ userId: '', licenseNumber: '', vehicleId: '', rating: 0 });
-      setNewUserData({ firstName: '', lastName: '', email: '', phone: '' });
-      setNewVehicleData({ licensePlate: '', model: '', year: 2023, type: '' as VehicleType, status: VehicleStatus.Available });
-      setCreateNewUser(false); // Ensure this is false initially for new driver
-      setCreateNewVehicle(false); // Ensure this is false initially for new driver
+      // When adding a new driver, clear all relevant states
+      setDriverFormData({ licenseNumber: '', vehicleId: '', rating: 0 });
+      setUserFormData({ firstName: '', lastName: '', email: '', phone: '' });
+      setCreateNewUser(false); // Default to selecting existing user for new driver
+      setCreateNewVehicle(false); // Default to selecting existing vehicle for new driver
     }
+    setNewVehicleData({ licensePlate: '', model: '', year: new Date().getFullYear(), type: '' as VehicleType, status: VehicleStatus.Available });
     setErrors({});
   }, [driver]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleDriverChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target;
-    setFormData((prev) => ({ ...prev, [id]: value }));
+    setDriverFormData((prev) => ({ ...prev, [id]: value }));
     setErrors((prev) => ({ ...prev, [id]: '' }));
-    console.log(`[handleChange] formData updated: ${id} to "${value}"`);
   };
 
-  const handleNewUserChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUserChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
-    const stateKey = id.replace('newUser_', ''); // Remove 'newUser_' prefix
-    setNewUserData((prev) => ({ ...prev, [stateKey]: value })); // Update the correct property
-    setErrors((prev) => ({ ...prev, [`newUser_${stateKey}`]: '' })); // Keep error key consistent if needed
-    console.log(`[handleNewUserChange] newUserData updated: ${stateKey} to "${value}"`);
+    setUserFormData((prev) => ({ ...prev, [id]: value }));
+    setErrors((prev) => ({ ...prev, [id]: '' }));
   };
 
   const handleNewVehicleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
-    const stateKey = id.replace('newVehicle_', ''); // Remove 'newVehicle_' prefix
-    // Ensure 'year' is stored as a number
-    const updatedValue = stateKey === 'year' ? Number(value) : value;
-    setNewVehicleData((prev) => ({ ...prev, [stateKey]: updatedValue })); // Update the correct property
-    setErrors((prev) => ({ ...prev, [`newVehicle_${stateKey}`]: '' })); // Keep error key consistent if needed
-    console.log(`[handleNewVehicleChange] newVehicleData updated: ${stateKey} to "${updatedValue}"`);
+    const updatedValue = id === 'newVehicle_year' ? Number(value) : value;
+    setNewVehicleData((prev) => ({ ...prev, [id.replace('newVehicle_', '')]: updatedValue }));
+    setErrors((prev) => ({ ...prev, [id]: '' }));
   };
 
   const handleNewVehicleSelect = (key: keyof typeof newVehicleData, value: string) => {
     setNewVehicleData((prev) => ({ ...prev, [key]: value as VehicleType }));
     setErrors((prev) => ({ ...prev, [`newVehicle_${key}`]: '' }));
-    console.log(`[handleNewVehicleSelect] newVehicleData select updated: ${key} to "${value}"`);
   };
 
   const handleSelectUser = (userId: string) => {
-    setFormData((prev) => ({ ...prev, userId }));
+    setDriverFormData((prev) => ({ ...prev, userId }));
     setErrors((prev) => ({ ...prev, userId: '' }));
-    console.log(`[handleSelectUser] formData userId updated: ${userId}`);
   };
 
   const handleSelectVehicle = (vehicleId: string) => {
-    setFormData((prev) => ({ ...prev, vehicleId: vehicleId === 'null_option' ? '' : vehicleId }));
+    setDriverFormData((prev) => ({ ...prev, vehicleId: vehicleId === 'null_option' ? '' : vehicleId }));
     setErrors((prev) => ({ ...prev, vehicleId: '' }));
-    console.log(`[handleSelectVehicle] formData vehicleId updated: ${vehicleId}`);
   };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!isEditing) {
+    if (isEditing) {
+      // Validation for existing driver (User) details
+      if (!userFormData.firstName.trim()) newErrors.firstName = 'First name is required.';
+      if (!userFormData.lastName.trim()) newErrors.lastName = 'Last name is required.';
+      if (!userFormData.email.trim()) newErrors.email = 'Email is required.';
+      if (!/\S+@\S+\.\S+/.test(userFormData.email)) newErrors.email = 'Invalid email format.';
+      if (!userFormData.phone.trim() || !/^\d+$/.test(userFormData.phone)) newErrors.phone = 'Phone number is required and must contain digits.';
+    } else { // Adding new driver
       if (createNewUser) {
-        if (!newUserData.firstName.trim()) newErrors.newUser_firstName = 'First name is required.';
-        if (!newUserData.lastName.trim()) newErrors.newUser_lastName = 'Last name is required.';
-        if (!newUserData.email.trim()) newErrors.newUser_email = 'Email is required.';
-        if (!/\S+@\S+\.\S+/.test(newUserData.email)) newErrors.newUser_email = 'Invalid email format.';
-        if (!newUserData.phone.trim() || !/^\d+$/.test(newUserData.phone)) newErrors.newUser_phone = 'Phone number is required and must contain digits.';
+        if (!userFormData.firstName.trim()) newErrors.firstName = 'First name is required.';
+        if (!userFormData.lastName.trim()) newErrors.lastName = 'Last name is required.';
+        if (!userFormData.email.trim()) newErrors.email = 'Email is required.';
+        if (!/\S+@\S+\.\S+/.test(userFormData.email)) newErrors.email = 'Invalid email format.';
+        if (!userFormData.phone.trim() || !/^\d+$/.test(userFormData.phone)) newErrors.phone = 'Phone number is required and must contain digits.';
       } else {
-        if (!formData.userId) newErrors.userId = 'User is required.';
+        if (!driverFormData.userId) newErrors.userId = 'User is required.';
       }
 
       if (createNewVehicle) {
         if (!newVehicleData.licensePlate.trim()) newErrors.newVehicle_licensePlate = 'License plate is required.';
         if (!newVehicleData.model.trim()) newErrors.newVehicle_model = 'Model is required.';
-        const yearNum = Number(newVehicleData.year); // Ensure this is checked against the number value
+        const yearNum = Number(newVehicleData.year);
         if (isNaN(yearNum) || yearNum < 1900 || yearNum > new Date().getFullYear() + 5) newErrors.newVehicle_year = 'Valid year is required.';
         if (!newVehicleData.type) newErrors.newVehicle_type = 'Vehicle type is required.';
       }
     }
 
-    if (!formData.licenseNumber.trim()) newErrors.licenseNumber = 'Driver license number is required.';
+    if (!driverFormData.licenseNumber.trim()) newErrors.licenseNumber = 'Driver license number is required.';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -154,63 +156,87 @@ export default function EditDriverModal({ driver, onClose, onSave }: EditDriverM
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) {
-      console.log('Validation failed:', errors);
       return;
     }
 
     try {
-      let finalUserId = formData.userId;
-      let finalVehicleId = formData.vehicleId;
+      let finalUserId = driver?.id; // For editing, use the existing driver's ID
+      let finalVehicleId = driverFormData.vehicleId;
 
-      if (createNewUser) {
-        console.log('Attempting to create new user...');
-        // ⭐ ADDED LOGS HERE ⭐
-        console.log(`[Validation Check] Checking for existing user with email: "${newUserData.email}"`);
-        const existingUsers = await rideshareService.getUsers({ email: newUserData.email, limit: 1 });
-        console.log('[Validation Check] API response for existing users:', existingUsers);
-        // ⭐ END ADDED LOGS ⭐
-
-        if (existingUsers.items.length > 0) {
-          setErrors((prev) => ({ ...prev, newUser_email: 'User with this email already exists.' }));
+      if (!isEditing && createNewUser) {
+        const existingUsers = await rideshareService.getUsers({ q: userFormData.email, limit: 1, role: UserRole.Driver });
+        if (existingUsers.data.length > 0) {
+          setErrors((prev) => ({ ...prev, email: 'User with this email already exists as a driver.' }));
           return;
         }
         const createdUser = await createUserMutation.mutateAsync({
-          ...newUserData,
-          role: 'driver',
+          firstName: userFormData.firstName,
+          lastName: userFormData.lastName,
+          email: userFormData.email,
+          phone: userFormData.phone,
+          role: UserRole.Driver,
+          driverLicenseNumber: driverFormData.licenseNumber, // Pass license number here for new driver
         });
         finalUserId = createdUser.id;
-        console.log('New user created:', createdUser);
+      } else if (!isEditing && !createNewUser) {
+        finalUserId = driverFormData.userId;
+        const selectedUser = availableUsers.find(u => u.id === finalUserId);
+        if (!selectedUser) {
+          setErrors((prev) => ({ ...prev, userId: 'Selected user not found.' }));
+          return;
+        }
+        // If selected user is not already a driver, update their role and driver-specific info
+        if (selectedUser.role !== UserRole.Driver) {
+          await updateDriverMutation.mutateAsync({
+            id: finalUserId,
+            data: {
+              role: UserRole.Driver,
+              driverLicenseNumber: driverFormData.licenseNumber,
+              assignedVehicleId: finalVehicleId || null,
+              averageRating: Number(driverFormData.rating),
+            }
+          });
+        } else {
+            // If the selected user is already a driver, just update their driver-specific info
+            await updateDriverMutation.mutateAsync({
+                id: finalUserId,
+                data: {
+                    driverLicenseNumber: driverFormData.licenseNumber,
+                    assignedVehicleId: finalVehicleId || null,
+                    averageRating: Number(driverFormData.rating),
+                }
+            });
+        }
       }
 
-      if (createNewVehicle) {
-        console.log('Attempting to create new vehicle...');
+      if (!isEditing && createNewVehicle) {
         const createdVehicle = await createVehicleMutation.mutateAsync({
           ...newVehicleData,
-          year: Number(newVehicleData.year), // Ensure year is a number for the API call
+          year: Number(newVehicleData.year),
           status: newVehicleData.status,
         });
         finalVehicleId = createdVehicle.id;
-        console.log('New vehicle created:', createdVehicle);
       }
 
       if (isEditing) {
-        console.log('Attempting to update driver...');
+        // Update existing driver (User entity)
         await updateDriverMutation.mutateAsync({
           id: driver!.id,
           data: {
-            licenseNumber: formData.licenseNumber,
-            vehicleId: finalVehicleId || null,
-            rating: formData.rating,
+            firstName: userFormData.firstName,
+            lastName: userFormData.lastName,
+            email: userFormData.email,
+            phone: userFormData.phone,
+            driverLicenseNumber: driverFormData.licenseNumber,
+            assignedVehicleId: finalVehicleId || null,
+            averageRating: Number(driverFormData.rating),
           },
         });
-        console.log('Driver updated successfully.');
       } else {
-        await createDriverMutation.mutateAsync({
-          userId: finalUserId,
-          licenseNumber: formData.licenseNumber,
-          vehicleId: finalVehicleId || null,
-        });
-        console.log('New driver created successfully.');
+        // For new driver, if a new user was created, assign vehicle if applicable
+        if (createNewUser && finalUserId && finalVehicleId) {
+            await rideshareService.assignVehicleToDriver(finalUserId, finalVehicleId);
+        }
       }
       onSave();
     } catch (err) {
@@ -220,20 +246,7 @@ export default function EditDriverModal({ driver, onClose, onSave }: EditDriverM
     }
   };
 
-  const isSubmitting = createDriverMutation.isPending || updateDriverMutation.isPending || createUserMutation.isPending || createVehicleMutation.isPending;
-
-  console.log('--- Render Cycle ---');
-  console.log(`isSubmitting: ${isSubmitting}`, {
-    createDriver: createDriverMutation.isPending,
-    updateDriver: updateDriverMutation.isPending,
-    createUser: createUserMutation.isPending,
-    createVehicle: createVehicleMutation.isPending,
-  });
-  console.log(`createNewUser checked: ${createNewUser}`);
-  console.log(`createNewVehicle checked: ${createNewVehicle}`);
-  console.log('New User Data State (after re-render):', newUserData);
-  console.log('New Vehicle Data State (after re-render):', newVehicleData);
-
+  const isSubmitting = createUserMutation.isPending || updateDriverMutation.isPending || createVehicleMutation.isPending;
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -243,54 +256,59 @@ export default function EditDriverModal({ driver, onClose, onSave }: EditDriverM
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid gap-6 py-4">
 
-          {/* User Selection/Creation */}
-          {!isEditing && (
-            <section className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="createNewUser"
-                  checked={createNewUser}
-                  onCheckedChange={(checked) => {
-                    setCreateNewUser(!!checked);
-                    if (checked) {
-                      setFormData(prev => ({ ...prev, userId: '' }));
-                    }
-                    setNewUserData({ firstName: '', lastName: '', email: '', phone: '' });
-                    setErrors({});
-                    console.log(`[Checkbox Change] Create New User: ${!!checked}`);
-                  }}
-                  disabled={isSubmitting}
-                />
-                <Label htmlFor="createNewUser" className="text-base font-medium">Create New User for this Driver</Label>
-              </div>
-
-              {createNewUser ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="newUser_firstName">First Name</Label>
-                    <Input id="newUser_firstName" value={newUserData.firstName} onChange={handleNewUserChange} disabled={isSubmitting} />
-                    {errors.newUser_firstName && <p className="text-red-500 text-xs mt-1">{errors.newUser_firstName}</p>}
-                  </div>
-                  <div>
-                    <Label htmlFor="newUser_lastName">Last Name</Label>
-                    <Input id="newUser_lastName" value={newUserData.lastName} onChange={handleNewUserChange} disabled={isSubmitting} />
-                    {errors.newUser_lastName && <p className="text-red-500 text-xs mt-1">{errors.newUser_lastName}</p>}
-                  </div>
-                  <div>
-                    <Label htmlFor="newUser_email">Email</Label>
-                    <Input id="newUser_email" type="email" value={newUserData.email} onChange={handleNewUserChange} disabled={isSubmitting} />
-                    {errors.newUser_email && <p className="text-red-500 text-xs mt-1">{errors.newUser_email}</p>}
-                  </div>
-                  <div>
-                    <Label htmlFor="newUser_phone">Phone</Label>
-                    <Input id="newUser_phone" type="tel" value={newUserData.phone} onChange={handleNewUserChange} disabled={isSubmitting} />
-                    {errors.newUser_phone && <p className="text-red-500 text-xs mt-1">{errors.newUser_phone}</p>}
-                  </div>
+          {/* User Details Section (for both editing and creating new user) */}
+          <section className="space-y-4">
+            <h3 className="text-lg font-semibold">{isEditing ? 'User Details' : 'User Selection/Creation'}</h3>
+            {isEditing || createNewUser ? (
+              // Display and allow editing of existing user's details OR input for new user
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input id="firstName" value={userFormData.firstName} onChange={handleUserChange} disabled={isSubmitting} />
+                  {errors.firstName && <p className="text-red-500 text-xs mt-1">{errors.firstName}</p>}
                 </div>
-              ) : (
+                <div>
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input id="lastName" value={userFormData.lastName} onChange={handleUserChange} disabled={isSubmitting} />
+                  {errors.lastName && <p className="text-red-500 text-xs mt-1">{errors.lastName}</p>}
+                </div>
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" type="email" value={userFormData.email} onChange={handleUserChange} disabled={isSubmitting} />
+                  {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+                </div>
+                <div>
+                  <Label htmlFor="phone">Phone</Label>
+                  <Input id="phone" type="tel" value={userFormData.phone} onChange={handleUserChange} disabled={isSubmitting} />
+                  {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
+                </div>
+              </div>
+            ) : (
+              // Existing logic for new driver: select existing user
+              <>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="createNewUser"
+                    checked={createNewUser}
+                    onCheckedChange={(checked) => {
+                      setCreateNewUser(!!checked);
+                      if (checked) {
+                        setDriverFormData(prev => ({ ...prev, userId: '' })); // Clear userId if creating new
+                        setUserFormData({ firstName: '', lastName: '', email: '', phone: '' }); // Clear new user data
+                      } else {
+                        // If unchecking, reset new user data and errors
+                        setUserFormData({ firstName: '', lastName: '', email: '', phone: '' });
+                      }
+                      setErrors({});
+                    }}
+                    disabled={isSubmitting}
+                  />
+                  <Label htmlFor="createNewUser" className="text-base font-medium">Create New User for this Driver</Label>
+                </div>
+
                 <div className="grid gap-2">
                   <Label htmlFor="userId">User</Label>
-                  <Select onValueChange={handleSelectUser} value={formData.userId} disabled={isLoadingUsers || isSubmitting}>
+                  <Select onValueChange={handleSelectUser} value={driverFormData.userId} disabled={isLoadingUsers || isSubmitting}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select an existing user" />
                     </SelectTrigger>
@@ -308,9 +326,9 @@ export default function EditDriverModal({ driver, onClose, onSave }: EditDriverM
                   </Select>
                   {errors.userId && <p className="text-red-500 text-xs mt-1">{errors.userId}</p>}
                 </div>
-              )}
-            </section>
-          )}
+              </>
+            )}
+          </section>
 
           <hr className="my-4 col-span-full" />
 
@@ -319,103 +337,132 @@ export default function EditDriverModal({ driver, onClose, onSave }: EditDriverM
             <h3 className="text-lg font-semibold">Driver Details</h3>
             <div className="grid gap-2">
               <Label htmlFor="licenseNumber">Driver License No.</Label>
-              <Input id="licenseNumber" value={formData.licenseNumber} onChange={handleChange} disabled={isSubmitting} />
+              <Input id="licenseNumber" value={driverFormData.licenseNumber} onChange={handleDriverChange} disabled={isSubmitting} />
               {errors.licenseNumber && <p className="text-red-500 text-xs mt-1">{errors.licenseNumber}</p>}
             </div>
           </section>
 
           <hr className="my-4 col-span-full" />
 
-          {/* Vehicle Selection/Creation */}
-          {!isEditing && (
-            <section className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="createNewVehicle"
-                  checked={createNewVehicle}
-                  onCheckedChange={(checked) => {
-                    setCreateNewVehicle(!!checked);
-                    if (checked) {
-                      setFormData(prev => ({ ...prev, vehicleId: '' }));
-                    }
-                    setNewVehicleData({ licensePlate: '', model: '', year: 2023, type: '' as VehicleType, status: VehicleStatus.Available });
-                    setErrors({});
-                    console.log(`[Checkbox Change] Create New Vehicle: ${!!checked}`);
-                  }}
-                  disabled={isSubmitting}
-                />
-                <Label htmlFor="createNewVehicle" className="text-base font-medium">Create New Vehicle for this Driver</Label>
-              </div>
+          {/* Vehicle Selection/Creation (only for adding new driver) or Vehicle Assignment (for editing) */}
+          <section className="space-y-4">
+            <h3 className="text-lg font-semibold">Vehicle Details</h3>
+            {!isEditing ? (
+              // Logic for creating new driver: select existing vehicle or create new
+              <>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="createNewVehicle"
+                    checked={createNewVehicle}
+                    onCheckedChange={(checked) => {
+                      setCreateNewVehicle(!!checked);
+                      if (checked) {
+                        setDriverFormData(prev => ({ ...prev, vehicleId: '' }));
+                      }
+                      setNewVehicleData({ licensePlate: '', model: '', year: new Date().getFullYear(), type: '' as VehicleType, status: VehicleStatus.Available });
+                      setErrors({});
+                    }}
+                    disabled={isSubmitting}
+                  />
+                  <Label htmlFor="createNewVehicle" className="text-base font-medium">Create New Vehicle for this Driver</Label>
+                </div>
 
-              {createNewVehicle ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="newVehicle_licensePlate">License Plate</Label>
-                    <Input id="newVehicle_licensePlate" value={newVehicleData.licensePlate} onChange={handleNewVehicleChange} disabled={isSubmitting} />
-                    {errors.newVehicle_licensePlate && <p className="text-red-500 text-xs mt-1">{errors.newVehicle_licensePlate}</p>}
+                {createNewVehicle ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="newVehicle_licensePlate">License Plate</Label>
+                      <Input id="newVehicle_licensePlate" value={newVehicleData.licensePlate} onChange={handleNewVehicleChange} disabled={isSubmitting} />
+                      {errors.newVehicle_licensePlate && <p className="text-red-500 text-xs mt-1">{errors.newVehicle_licensePlate}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="newVehicle_model">Model</Label>
+                      <Input id="newVehicle_model" value={newVehicleData.model} onChange={handleNewVehicleChange} disabled={isSubmitting} />
+                      {errors.newVehicle_model && <p className="text-red-500 text-xs mt-1">{errors.newVehicle_model}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="newVehicle_year">Year</Label>
+                      <Input id="newVehicle_year" type="number" value={newVehicleData.year} onChange={handleNewVehicleChange} disabled={isSubmitting} />
+                      {errors.newVehicle_year && <p className="text-red-500 text-xs mt-1">{errors.newVehicle_year}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="newVehicle_type">Type</Label>
+                      <Select onValueChange={(value) => handleNewVehicleSelect('type', value)} value={newVehicleData.type} disabled={isSubmitting}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select vehicle type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.values(VehicleType).map((type) => (
+                            <SelectItem key={type} value={type}>{type}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {errors.newVehicle_type && <p className="text-red-500 text-xs mt-1">{errors.newVehicle_type}</p>}
+                    </div>
                   </div>
-                  <div>
-                    <Label htmlFor="newVehicle_model">Model</Label>
-                    <Input id="newVehicle_model" value={newVehicleData.model} onChange={handleNewVehicleChange} disabled={isSubmitting} />
-                    {errors.newVehicle_model && <p className="text-red-500 text-xs mt-1">{errors.newVehicle_model}</p>}
-                  </div>
-                  <div>
-                    <Label htmlFor="newVehicle_year">Year</Label>
-                    <Input id="newVehicle_year" type="number" value={newVehicleData.year} onChange={handleNewVehicleChange} disabled={isSubmitting} />
-                    {errors.newVehicle_year && <p className="text-red-500 text-xs mt-1">{errors.newVehicle_year}</p>}
-                  </div>
-                  <div>
-                    <Label htmlFor="newVehicle_type">Type</Label>
-                    <Select onValueChange={(value) => handleNewVehicleSelect('type', value)} value={newVehicleData.type} disabled={isSubmitting}>
+                ) : (
+                  <div className="grid gap-2">
+                    <Label htmlFor="vehicleId">Vehicle</Label>
+                    <Select onValueChange={handleSelectVehicle} value={driverFormData.vehicleId || 'null_option'} disabled={isLoadingVehicles || isSubmitting}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select vehicle type" />
+                        <SelectValue placeholder="Select an existing vehicle" />
                       </SelectTrigger>
                       <SelectContent>
-                        {Object.values(VehicleType).map((type) => (
-                          <SelectItem key={type} value={type}>{type}</SelectItem>
-                        ))}
+                        <SelectItem value="null_option">None</SelectItem>
+                        {availableVehicles.length === 0 ? (
+                          <SelectItem value="no-vehicles-available" disabled>No existing vehicles available</SelectItem>
+                        ) : (
+                          availableVehicles.map((vehicle) => (
+                            <SelectItem key={vehicle.id} value={vehicle.id}>
+                              {vehicle.model} ({vehicle.licensePlate})
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
-                    {errors.newVehicle_type && <p className="text-red-500 text-xs mt-1">{errors.newVehicle_type}</p>}
+                    {errors.vehicleId && <p className="text-red-500 text-xs mt-1">{errors.vehicleId}</p>}
                   </div>
-                </div>
-              ) : (
-                <div className="grid gap-2">
-                  <Label htmlFor="vehicleId">Vehicle</Label>
-                  <Select onValueChange={handleSelectVehicle} value={formData.vehicleId || 'null_option'} disabled={isLoadingVehicles || isSubmitting}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select an existing vehicle" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="null_option">None</SelectItem>
-                      {availableVehicles.length === 0 ? (
-                        <SelectItem value="no-vehicles-available" disabled>No existing vehicles available</SelectItem>
-                      ) : (
-                        availableVehicles.map((vehicle) => (
-                          <SelectItem key={vehicle.id} value={vehicle.id}>
-                            {vehicle.model} ({vehicle.licensePlate})
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </section>
-          )}
+                )}
+              </>
+            ) : (
+              // For editing existing driver: only allow selecting/unassigning existing vehicle
+              <div className="grid gap-2">
+                <Label htmlFor="vehicleId">Vehicle</Label>
+                <Select onValueChange={handleSelectVehicle} value={driverFormData.vehicleId || 'null_option'} disabled={isLoadingVehicles || isSubmitting}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an existing vehicle" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="null_option">None</SelectItem>
+                    {availableVehicles.length === 0 ? (
+                      <SelectItem value="no-vehicles-available" disabled>No existing vehicles available</SelectItem>
+                    ) : (
+                      availableVehicles.map((vehicle) => (
+                        <SelectItem key={vehicle.id} value={vehicle.id}>
+                          {vehicle.model} ({vehicle.licensePlate})
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {errors.vehicleId && <p className="text-red-500 text-xs mt-1">{errors.vehicleId}</p>}
+              </div>
+            )}
+          </section>
 
+          {/* Rating field (only for editing existing driver) */}
           {isEditing && (
             <section className="space-y-4">
               <h3 className="text-lg font-semibold">Rating</h3>
               <div className="grid gap-2">
                 <Label htmlFor="rating">Rating</Label>
-                <Input id="rating" type="number" value={formData.rating} onChange={handleChange} min="0" max="5" step="0.1" disabled={isSubmitting} />
+                <Input id="rating" type="number" value={driverFormData.rating} onChange={handleDriverChange} min="0" max="5" step="0.1" disabled={isSubmitting} />
+                {errors.rating && <p className="text-red-500 text-xs mt-1">{errors.rating}</p>}
               </div>
             </section>
           )}
 
           {errors.form && <p className="text-red-500 text-sm text-center col-span-full mt-4">{errors.form}</p>}
-          
+
           <DialogFooter className="mt-6 flex justify-end gap-2 col-span-full">
             <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
               Cancel
