@@ -1,5 +1,5 @@
 // Core User Types
-export enum UserRole {
+export enum UserRole { // Re-adding UserRole enum for clarity, though string literals are used below
   Customer = 'customer',
   Driver = 'driver',
   Admin = 'admin',
@@ -244,21 +244,19 @@ export interface PaginatedResponse<T> {
 // export interface AdminStats { ... }
 
 // Form Types for API calls
+// ⭐ UPDATED: CreateRideRequest to match backend's CreateRideDto structure ⭐
 export interface CreateRideRequest {
-  pickUpLocation: Location;
-  dropOffLocation: Location;
+  driverId: string;
+  vehicleId: string;
+  routeId?: string | null;
+  pickUpLocation: Location; // Now a Location object
+  dropOffLocation: Location; // Now a Location object
   type: 'private' | 'carpool';
-  routeId?: string;
-  estimatedPrice: number; // Added for booking panel
-  passengerCount: number; // Added for booking panel
-  driverId: string; // Added for booking panel
-  vehicleId: string; // Added for booking panel
-  pickupAddress: string; // Added for booking panel
-  destinationAddress: string; // Added for booking panel
-  pickupLatitude: number; // Added for booking panel
-  pickupLongitude: number; // Added for booking panel
-  destinationLatitude: number; // Added for booking panel
-  destinationLongitude: number; // Added for booking panel
+  status: 'pending' | 'active' | 'completed' | 'cancelled'; // Added status, typically 'pending' from frontend
+  fare: number; // Maps to estimatedPrice from frontend
+  startTime?: Date;
+  endTime?: Date;
+  pickupAddress:string;
 }
 
 export interface CreateDeliveryRequest {

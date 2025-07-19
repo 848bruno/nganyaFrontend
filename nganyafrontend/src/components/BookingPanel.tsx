@@ -1,5 +1,4 @@
-// src/components/BookingPanel.tsx
-import { useState, useEffect, useCallback } from "react"; // ⭐ Add useEffect, useCallback ⭐
+import { useState, useEffect, useCallback } from 'react';
 import {
   MapPin,
   ArrowUpDown,
@@ -10,31 +9,138 @@ import {
   Zap,
   Share2,
   Loader2,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { VehicleCard } from "./VehicleCard";
-import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "@/components/ui/use-toast";
-import debounce from 'lodash.debounce'; // ⭐ Install: npm install lodash.debounce @types/lodash.debounce ⭐
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { VehicleCard } from './VehicleCard';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/components/ui/use-toast';
+import debounce from 'lodash.debounce';
 
-import { ridesService } from "@/lib/rides-service";
-import { geoService } from "@/lib/geo-service"; // This will be your service for new backend calls
+// ⭐ Mock rideshareService for demonstration purposes within this single file context ⭐
+// In a real application, this would be a separate service file (e.g., src/lib/rideshare-service.ts)
+// that encapsulates API calls to your backend.
+const API_BASE_URL = 'http://localhost:3001';
 
-// ⭐ NEW Type for Suggested Vehicle from Backend ⭐
+const mockRideshareService = {
+  // This method orchestrates calls to backend geocoding, routing, and driver finding endpoints
+  getSuggestedDriversAndRoute: async (pickupAddress: string, destinationAddress: string) => {
+    // ⭐ MODIFIED: Send addresses directly to /route/calculate, as per backend's expectation ⭐
+    const routeResponse = await fetch(`${API_BASE_URL}/route/calculate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pickup: pickupAddress, // Send pickup address string
+        dropoff: destinationAddress, // Send dropoff address string
+      }),
+    }).then(res => {
+      if (!res.ok) throw new Error(`Route calculation failed: ${res.statusText}`);
+      return res.json();
+    });
+
+    if (!routeResponse || !routeResponse.geometry) {
+      throw new Error('Could not calculate route.');
+    }
+
+    // Use the geocoded coordinates returned by the backend's /route/calculate endpoint
+    const pickupLat = routeResponse.start.lat;
+    const pickupLng = routeResponse.start.lon;
+    const destinationLat = routeResponse.end.lat;
+    const destinationLng = routeResponse.end.lon;
+
+    // ⭐ NEW: Frontend validation and logging of parsed coordinates (from backend response) ⭐
+    console.log('Parsed Pickup Coords from backend:', { pickupLat, pickupLng });
+    console.log('Parsed Destination Coords from backend:', { destinationLat, destinationLng });
+
+    if (isNaN(pickupLat) || isNaN(pickupLng)) {
+      throw new Error(`Invalid pickup coordinates from backend: lat=${routeResponse.start.lat}, lon=${routeResponse.start.lon}`);
+    }
+    if (isNaN(destinationLat) || isNaN(destinationLng)) {
+      throw new Error(`Invalid destination coordinates from backend: lat=${routeResponse.end.lat}, lon=${routeResponse.end.lon}`);
+    }
+    // ⭐ END NEW ⭐
+
+    // 3. Find nearest online drivers using the pickup coordinates (now correctly obtained from routeResponse)
+    const driversResponse = await fetch(`${API_BASE_URL}/users/drivers/nearest?latitude=${pickupLat}&longitude=${pickupLng}&maxDistanceKm=10&limit=5`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      // Assuming authentication is handled by a global interceptor or context for this API call
+    }).then(res => {
+      if (!res.ok) throw new Error(`Fetching nearest drivers failed: ${res.statusText}`);
+      return res.json();
+    });
+
+    if (!driversResponse) {
+      throw new Error('Could not find nearest drivers.');
+    }
+
+    // Combine results into the format expected by the frontend components
+    return {
+      route: {
+        pickupLatitude: pickupLat,
+        pickupLongitude: pickupLng,
+        destinationLatitude: destinationLat,
+        destinationLongitude: destinationLng,
+        geometry: routeResponse.geometry,
+        distance: routeResponse.distance, // in meters
+        duration: routeResponse.duration, // in seconds
+        instructions: routeResponse.instructions,
+      },
+      suggestedVehicles: driversResponse.map((driver: any) => {
+        // Calculate a mock price based on route distance and driver's estimated time
+        const baseFare = 5;
+        const pricePerKm = 1.5;
+        const pricePerMin = 0.2;
+
+        const distanceKm = (routeResponse.distance || 0) / 1000;
+        const durationMin = (routeResponse.duration || 0) / 60;
+
+        const price = baseFare + distanceKm * pricePerKm + durationMin * pricePerMin;
+
+        return {
+          id: driver.assignedVehicle?.id || `mock-vehicle-${driver.id}`, // Fallback ID
+          type: driver.assignedVehicle?.type || 'Standard', // Fallback type
+          driver: driver, // Pass the full driver object
+          price: parseFloat(price.toFixed(2)),
+          estimatedTime: `${driver.distance?.toFixed(0) || '~'} min`, // Distance from backend for driver proximity
+          capacity: driver.assignedVehicle?.capacity || 4, // Fallback capacity
+          features: [], // Populate if available from backend
+          vehicleInfo: driver.assignedVehicle ? `${driver.assignedVehicle.model} (${driver.assignedVehicle.licensePlate})` : 'N/A Vehicle',
+          pickupLatitude: pickupLat,
+          pickupLongitude: pickupLng,
+          destinationLatitude: destinationLat,
+          destinationLongitude: destinationLng,
+        };
+      }),
+    };
+  },
+  // Placeholder for createRide - assuming it exists in your actual rideshareService
+  createRide: async (rideData: any) => {
+    const response = await fetch(`${API_BASE_URL}/rides`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rideData),
+    });
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to create ride');
+    }
+    return response.json();
+  }
+};
+// ⭐ END Mock rideshareService ⭐
+
+
+import type { User, CreateRideRequest } from '@/lib/types';
+
+// ⭐ NEW Type for Suggested Vehicle from Backend (now based on User and Vehicle) ⭐
 interface SuggestedVehicle {
   id: string; // Vehicle ID
   type: string; // Vehicle type (e.g., "Economy", "Premium")
-  driver: {
-    id: string; // Driver's user ID
-    name: string;
-    rating: number;
-    image?: string; // Driver's profile image
-    trips: number;
-  };
+  driver: User; // The driver is now a User object
   price: number; // Calculated price for this route
   estimatedTime: string; // Estimated time to pickup (e.g., "5 min")
   capacity: number;
@@ -48,180 +154,224 @@ interface SuggestedVehicle {
 }
 
 interface BookingPanelProps {
-  setRouteData: React.Dispatch<React.SetStateAction<any>>;
+  // ⭐ Updated setRouteData to match the new signature from customer-dashboard ⭐
+  setRouteData: (data: {
+    pickupLat?: number;
+    pickupLng?: number;
+    destinationLat?: number;
+    destinationLng?: number;
+    geometry?: any;
+    distance?: number;
+    duration?: number;
+    instructions?: any[];
+  } | null) => void;
 }
 
 export function BookingPanel({ setRouteData }: BookingPanelProps) {
   const { user } = useAuth();
-  const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null);
-  const [pickup, setPickup] = useState("Your current location");
-  const [destination, setDestination] = useState("");
-  const [activeTab, setActiveTab] = useState("ride");
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
+  const [pickup, setPickup] = useState('');
+  const [destination, setDestination] = useState('');
+  const [activeTab, setActiveTab] = useState('ride');
   const [isBooking, setIsBooking] = useState(false);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
-  const [suggestedVehicles, setSuggestedVehicles] = useState<SuggestedVehicle[]>([]); // ⭐ NEW State ⭐
+
+  // State to hold the final list of suggested vehicles derived from nearest drivers
+  const [suggestedVehicles, setSuggestedVehicles] = useState<SuggestedVehicle[]>([]);
+
+  // State for geocoded coordinates (to pass to useNearestDrivers)
   const [currentRouteCoordinates, setCurrentRouteCoordinates] = useState<{
     pickup: { lat: number; lng: number } | null;
     destination: { lat: number; lng: number } | null;
-  } | null>(null); // ⭐ NEW State to store geocoded coords ⭐
+    distance?: number;
+    duration?: number;
+  } | null>(null);
 
-
-  // ⭐ Debounced function for route calculation and driver suggestion ⭐
-  const debouncedCalculateAndSuggest = useCallback(
+  // ⭐ Debounced function for geocoding and setting coordinates ⭐
+  const debouncedGeocodeAndSetCoords = useCallback(
     debounce(async (pickupAddress: string, destinationAddress: string) => {
+      // ⭐ Log addresses before API call for debugging ⭐
+      console.log('Attempting geocoding for:', { pickupAddress, destinationAddress });
+
+      // ⭐ Ensure both addresses are non-empty ⭐
       if (!pickupAddress.trim() || !destinationAddress.trim()) {
-        setSuggestedVehicles([]); // Clear suggestions if inputs are empty
-        setRouteData(null);
+        setSuggestedVehicles([]);
+        setRouteData(null); // Clear route data in URL
         setCurrentRouteCoordinates(null);
         setIsCalculatingRoute(false);
+        console.log('Geocoding skipped: One or both addresses are empty.');
         return;
       }
 
       setIsCalculatingRoute(true);
-      setRouteData(null); // Clear previous route data
-      setSuggestedVehicles([]); // Clear previous suggestions
+      setSuggestedVehicles([]);
       setCurrentRouteCoordinates(null); // Clear previous coords
 
       try {
-        // ⭐ Call backend API for route calculation AND nearest drivers ⭐
-        // This single API call will do geocoding, route calculation, and driver matching.
-        const response = await geoService.getSuggestedDriversAndRoute(
+        // ⭐ Use the combined API call from mockRideshareService ⭐
+        const response = await mockRideshareService.getSuggestedDriversAndRoute(
           pickupAddress,
-          destinationAddress
+          destinationAddress,
         );
 
-        setRouteData(response.route); // Data for map display
-        setSuggestedVehicles(response.suggestedVehicles); // Data for vehicle cards
+        // Update route data in the URL search parameters
+        setRouteData({
+          pickupLat: response.route.pickupLatitude,
+          pickupLng: response.route.pickupLongitude,
+          destinationLat: response.route.destinationLatitude,
+          destinationLng: response.route.destinationLongitude,
+          geometry: response.route.geometry,
+          distance: response.route.distance,
+          duration: response.route.duration,
+          instructions: response.route.instructions,
+        });
+
         setCurrentRouteCoordinates({
           pickup: { lat: response.route.pickupLatitude, lng: response.route.pickupLongitude },
           destination: { lat: response.route.destinationLatitude, lng: response.route.destinationLongitude },
+          distance: response.route.distance,
+          duration: response.route.duration,
         });
 
-        if (response.suggestedVehicles.length === 0) {
+        setSuggestedVehicles(response.suggestedVehicles); // Directly use suggestedVehicles from the response
+
+        if (response.suggestedVehicles.length > 0) {
+          setSelectedVehicleId(response.suggestedVehicles[0].id); // Auto-select first
           toast({
-            title: "No Vehicles Found",
-            description: "No drivers available for this route currently.",
-            variant: "default",
+            title: 'Route & Vehicles Found!',
+            description: `Distance: ${(response.route.distance / 1000).toFixed(2)} km, Duration: ${(
+              response.route.duration / 60
+            ).toFixed(0)} min. ${response.suggestedVehicles.length} drivers found.`,
           });
         } else {
           toast({
-            title: "Route & Vehicles Found!",
-            description: `Distance: ${(response.route.distance / 1000).toFixed(2)} km, Duration: ${(response.route.duration / 60).toFixed(0)} min. ${response.suggestedVehicles.length} drivers found.`,
+            title: 'No Vehicles Found',
+            description: 'No drivers available for this route currently.',
+            variant: 'default',
           });
-          setSelectedVehicle(response.suggestedVehicles[0]?.id || null); // Auto-select the first suggested vehicle
         }
       } catch (error: any) {
-        console.error("Error calculating route or fetching drivers:", error);
+        console.error('Error geocoding or calculating route:', error);
         toast({
-          title: "Calculation Failed",
-          description: error.message || "Could not calculate route or find drivers. Please try again.",
-          variant: "destructive",
+          title: 'Location Error',
+          description: error.message || 'Could not calculate route. Please try again.',
+          variant: 'destructive',
         });
-        setSuggestedVehicles([]); // Ensure no old suggestions remain on error
+        setSuggestedVehicles([]);
+        setRouteData(null); // Clear route data in URL on error
+        setCurrentRouteCoordinates(null);
       } finally {
         setIsCalculatingRoute(false);
       }
-    }, 500), // ⭐ Debounce by 500ms ⭐
-    [setRouteData] // Dependency for useCallback
+    }, 500),
+    [setRouteData], // Dependency for useCallback
   );
 
-  // ⭐ useEffect to trigger calculation on input change ⭐
+  // Effect to trigger geocoding when inputs change
   useEffect(() => {
-    // Only trigger if both pickup and destination are not empty
+    // ⭐ Only trigger if both pickup and destination are non-empty ⭐
     if (pickup.trim() && destination.trim()) {
-      debouncedCalculateAndSuggest(pickup, destination);
+      debouncedGeocodeAndSetCoords(pickup, destination);
     } else {
       setSuggestedVehicles([]);
-      setRouteData(null);
+      setRouteData(null); // Clear route data in URL
       setCurrentRouteCoordinates(null);
     }
-  }, [pickup, destination, debouncedCalculateAndSuggest, setRouteData]);
+  }, [pickup, destination, debouncedGeocodeAndSetCoords, setRouteData]);
 
 
   const handleBooking = async () => {
     if (!user) {
       toast({
-        title: "Authentication Required",
-        description: "Please sign in to book a ride.",
-        variant: "destructive",
+        title: 'Authentication Required',
+        description: 'Please sign in to book a ride.',
+        variant: 'destructive',
       });
       return;
     }
 
-    if (!destination.trim() || !currentRouteCoordinates) {
+    if (!destination.trim() || !currentRouteCoordinates || !currentRouteCoordinates.pickup || !currentRouteCoordinates.destination) {
       toast({
-        title: "Location Details Missing",
-        description: "Please ensure pickup and destination are set and route is calculated.",
-        variant: "destructive",
+        title: 'Location Details Missing',
+        description: 'Please ensure pickup and destination are set and route is calculated.',
+        variant: 'destructive',
       });
       return;
     }
 
-    if (activeTab === "ride" && !selectedVehicle) {
+    if (activeTab === 'ride' && !selectedVehicleId) {
       toast({
-        title: "Vehicle Selection Required",
-        description: "Please select a vehicle.",
-        variant: "destructive",
+        title: 'Vehicle Selection Required',
+        description: 'Please select a vehicle.',
+        variant: 'destructive',
       });
       return;
     }
 
     setIsBooking(true);
     try {
-      if (activeTab === "ride") {
-        const selectedVehicleData = suggestedVehicles.find(
-          (v) => v.id === selectedVehicle,
-        );
+      if (activeTab === 'ride') {
+        const selectedVehicleData = suggestedVehicles.find((v) => v.id === selectedVehicleId);
 
         if (!selectedVehicleData) {
           toast({
-            title: "Invalid Vehicle Selection",
-            description: "Please select an available vehicle.",
-            variant: "destructive",
+            title: 'Invalid Vehicle Selection',
+            description: 'Please select an available vehicle.',
+            variant: 'destructive',
           });
           setIsBooking(false);
           return;
         }
 
-        // ⭐ Use the actual geocoded coordinates from currentRouteCoordinates ⭐
-        const rideData = {
-          type: selectedVehicleData.type.toLowerCase() as any, // Use type from suggested vehicle
-          pickupAddress: pickup,
-          pickupLatitude: currentRouteCoordinates.pickup!.lat, // Non-null assertion as we check it above
-          pickupLongitude: currentRouteCoordinates.pickup!.lng,
-          destinationAddress: destination,
-          destinationLatitude: currentRouteCoordinates.destination!.lat,
-          destinationLongitude: currentRouteCoordinates.destination!.lng,
-          estimatedPrice: selectedVehicleData.price, // Use price from suggested vehicle
-          passengerCount: 1, // You might want to make this dynamic
-          driverId: selectedVehicleData.driver.id, // Pass the suggested driver's ID
-          vehicleId: selectedVehicleData.id, // Pass the suggested vehicle's ID
+        // ⭐ UPDATED: Construct rideData to match the CreateRideRequest interface ⭐
+        const rideData: CreateRideRequest = {
+          type: selectedVehicleData.type.toLowerCase() as CreateRideRequest['type'],
+          pickUpLocation: {
+            lat: currentRouteCoordinates.pickup.lat,
+            lng: currentRouteCoordinates.pickup.lng,
+          },
+          dropOffLocation: {
+            lat: currentRouteCoordinates.destination.lat,
+            lng: currentRouteCoordinates.destination.lng,
+          },
+          fare: selectedVehicleData.price, // Map estimatedPrice to fare
+          passengerCount: 1, // Assuming 1 passenger for now, can be made dynamic
+          driverId: selectedVehicleData.driver.id,
+          vehicleId: selectedVehicleData.id,
+          pickupAddress: pickup, // Pass original address for backend logging/records
+          destinationAddress: destination, // Pass original address for backend logging/records
+          pickupLatitude: currentRouteCoordinates.pickup.lat,
+          pickupLongitude: currentRouteCoordinates.pickup.lng,
+          destinationLatitude: currentRouteCoordinates.destination.lat,
+          destinationLongitude: currentRouteCoordinates.destination.lng,
+          estimatedPrice: selectedVehicleData.price, // Add estimatedPrice
         };
 
-        const ride = await ridesService.createRide(rideData);
+        const ride = await mockRideshareService.createRide(rideData); // ⭐ Changed to mockRideshareService ⭐
 
         toast({
-          title: "Ride Requested!",
-          description: "Your ride has been successfully booked!",
+          title: 'Ride Requested!',
+          description: 'Your ride has been successfully booked!',
         });
 
-        // You might want to navigate to a ride tracking page here
       } else {
         toast({
-          title: "Feature Not Fully Implemented",
-          description: "This feature is under development.",
+          title: 'Feature Not Fully Implemented',
+          description: 'This feature is under development.',
         });
       }
     } catch (error: any) {
       toast({
-        title: "Booking Failed",
-        description: error.message || "Unable to book ride. Please try again.",
-        variant: "destructive",
+        title: 'Booking Failed',
+        description: error.message || 'Unable to book ride. Please try again.',
+        variant: 'destructive',
       });
     } finally {
       setIsBooking(false);
     }
   };
+
+  const overallLoading = isCalculatingRoute; // Removed isLoadingNearestDrivers as it's part of isCalculatingRoute now
 
   return (
     <div className="w-full max-w-md bg-card rounded-t-3xl md:rounded-2xl shadow-2xl border border-border overflow-hidden">
@@ -230,11 +380,7 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
         <div className="w-12 h-1 bg-muted rounded-full mx-auto mb-6 md:hidden"></div>
 
         {/* Service Type Tabs */}
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="w-full mb-4"
-        >
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mb-4">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="ride" className="flex items-center gap-1">
               <MapPin className="w-3 h-3" />
@@ -287,8 +433,7 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
               placeholder="Where to?"
             />
           </div>
-          {/* ⭐ REMOVED Calculate Route Button ⭐ */}
-          {isCalculatingRoute && ( // Show loader when calculating
+          {overallLoading && (
             <Button className="w-full" disabled>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               Calculating Route & Finding Drivers...
@@ -317,12 +462,10 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
       {/* Service-specific content */}
       <div className="max-h-96 overflow-y-auto">
         <div className="p-4 space-y-3">
-          {activeTab === "ride" && (
+          {activeTab === 'ride' && (
             <>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-medium text-sm text-muted-foreground">
-                  Available Vehicles
-                </h3>
+                <h3 className="font-medium text-sm text-muted-foreground">Available Vehicles</h3>
                 <div className="flex gap-1">
                   <Badge variant="secondary" className="text-xs">
                     <DollarSign className="w-3 h-3 mr-1" />
@@ -334,7 +477,7 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
                   </Badge>
                 </div>
               </div>
-              {isCalculatingRoute ? (
+              {overallLoading ? (
                 <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
                   <Loader2 className="w-6 h-6 animate-spin mb-2" />
                   <span>Searching for vehicles...</span>
@@ -343,15 +486,25 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
                 suggestedVehicles.map((vehicle) => (
                   <VehicleCard
                     key={vehicle.id}
-                    {...vehicle}
-                    driver={{ // Ensure driver object matches VehicleCardProps
-                        name: vehicle.driver.name,
-                        rating: vehicle.driver.rating,
-                        image: vehicle.driver.image,
-                        trips: vehicle.driver.trips,
+                    id={vehicle.id}
+                    type={vehicle.type}
+                    price={vehicle.price}
+                    estimatedTime={vehicle.estimatedTime}
+                    capacity={vehicle.capacity}
+                    vehicleInfo={vehicle.vehicleInfo}
+                    driver={{
+                      name: vehicle.driver.name,
+                      rating: vehicle.driver.averageRating || 0,
+                      image: vehicle.driver.email ? `https://api.dicebear.com/7.x/initials/svg?seed=${vehicle.driver.email}` : '/placeholder.svg',
+                      trips: vehicle.driver.totalRidesCompleted || 0,
                     }}
-                    isSelected={selectedVehicle === vehicle.id}
-                    onSelect={setSelectedVehicle}
+                    isSelected={selectedVehicleId === vehicle.id}
+                    onSelect={setSelectedVehicleId}
+                    // ⭐ NOTE: These props need to be added to VehicleCardProps interface in VehicleCard.tsx ⭐
+                    pickupLatitude={vehicle.pickupLatitude}
+                    pickupLongitude={vehicle.pickupLongitude}
+                    destinationLatitude={vehicle.destinationLatitude}
+                    destinationLongitude={vehicle.destinationLongitude}
                   />
                 ))
               ) : (
@@ -362,70 +515,33 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
             </>
           )}
 
-          {activeTab === "carpool" && (
+          {activeTab === 'carpool' && (
             <>
               <div className="mb-3">
-                <h3 className="font-medium text-sm text-muted-foreground mb-2">
-                  Available Shared Rides
-                </h3>
+                <h3 className="font-medium text-sm text-muted-foreground mb-2">Available Shared Rides</h3>
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
                   <div className="flex items-center gap-2 text-green-700">
                     <DollarSign className="w-4 h-4" />
-                    <span className="text-sm font-medium">
-                      Save up to 60% by sharing!
-                    </span>
+                    <span className="text-sm font-medium">Save up to 60% by sharing!</span>
                   </div>
                 </div>
               </div>
-              {/* This part still uses mock data. You'd need a backend endpoint for carpool suggestions too. */}
-              {mockCarpoolRides.map((ride) => (
-                <div
-                  key={ride.id}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all duration-200 ${
-                    selectedVehicle === ride.id
-                      ? "border-primary bg-primary/5 shadow-md"
-                      : "border-border bg-card hover:border-primary/50 hover:shadow-sm"
-                  }`}
-                  onClick={() => setSelectedVehicle(ride.id)}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{ride.route}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {ride.availableSeats} seats left
-                      </Badge>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-lg">${ride.price}</div>
-                      <div className="text-xs text-green-600">
-                        {ride.savings}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <span>{ride.driver.name}</span>
-                    <span>⭐ {ride.driver.rating}</span>
-                    <span>{ride.estimatedTime}</span>
-                  </div>
-                </div>
-              ))}
+              <p className="text-center text-muted-foreground py-10">
+                Carpooling feature is under development. Stay tuned!
+              </p>
             </>
           )}
 
-          {activeTab === "delivery" && (
+          {activeTab === 'delivery' && (
             <>
-              <h3 className="font-medium text-sm text-muted-foreground mb-3">
-                Package Options
-              </h3>
+              <h3 className="font-medium text-sm text-muted-foreground mb-3">Package Options</h3>
               <div className="space-y-3">
                 <div className="p-4 rounded-xl border border-border bg-card">
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="font-medium">Small Package</h4>
                     <span className="font-bold">$8</span>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Up to 5kg • 30x30x30cm
-                  </p>
+                  <p className="text-sm text-muted-foreground">Up to 5kg • 30x30x30cm</p>
                   <p className="text-sm text-primary">Delivery in 45 min</p>
                 </div>
                 <div className="p-4 rounded-xl border border-border bg-card">
@@ -433,9 +549,7 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
                     <h4 className="font-medium">Medium Package</h4>
                     <span className="font-bold">$15</span>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Up to 15kg • 50x50x50cm
-                  </p>
+                  <p className="text-sm text-muted-foreground">Up to 15kg • 50x50x50cm</p>
                   <p className="text-sm text-primary">Delivery in 60 min</p>
                 </div>
                 <div className="p-4 rounded-xl border border-border bg-card">
@@ -443,9 +557,7 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
                     <h4 className="font-medium">Large Package</h4>
                     <span className="font-bold">$25</span>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Up to 30kg • 80x80x80cm
-                  </p>
+                  <p className="text-sm text-muted-foreground">Up to 30kg • 80x80x80cm</p>
                   <p className="text-sm text-primary">Delivery in 90 min</p>
                 </div>
               </div>
@@ -455,13 +567,13 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
       </div>
 
       {/* Bottom actions */}
-      {(selectedVehicle || activeTab === "delivery") && (
+      {(selectedVehicleId || activeTab === 'delivery') && (
         <div className="p-4 border-t border-border bg-muted/20">
           <Button
             className="w-full"
             size="lg"
             onClick={handleBooking}
-            disabled={isBooking || !user || !currentRouteCoordinates} // Disable if no route calculated
+            disabled={isBooking || !user || !currentRouteCoordinates || !selectedVehicleId}
           >
             {isBooking ? (
               <>
@@ -470,17 +582,15 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
               </>
             ) : (
               <>
-                {activeTab === "ride" && "Confirm Booking"}
-                {activeTab === "carpool" && "Join Shared Ride"}
-                {activeTab === "delivery" && "Schedule Delivery"}
+                {activeTab === 'ride' && 'Confirm Booking'}
+                {activeTab === 'carpool' && 'Join Shared Ride'}
+                {activeTab === 'delivery' && 'Schedule Delivery'}
               </>
             )}
           </Button>
 
           {!user && (
-            <p className="text-center text-sm text-muted-foreground mt-2">
-              Please sign in to book a ride
-            </p>
+            <p className="text-center text-sm text-muted-foreground mt-2">Please sign in to book a ride</p>
           )}
         </div>
       )}

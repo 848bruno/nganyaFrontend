@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from "react";
 import { Car, Navigation2, Clock, MapPin, Zap, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import L from "leaflet"; // Keep this import for L.LatLngTuple and other Leaflet types/utilities
+import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 
 
@@ -13,7 +13,7 @@ interface MapViewProps {
     end: { lat: number; lon: number };
     geometry: {
       type: string;
-      coordinates: [number, number][];
+      coordinates: [number, number][]; // OSRM returns [lon, lat]
     };
     distance: number;
     duration: number;
@@ -26,6 +26,9 @@ function MapUpdater({ routeData }: MapViewProps) {
   const map = useMap();
 
   useEffect(() => {
+    // ⭐ NEW: Log routeData received by MapUpdater ⭐
+    console.log("MapUpdater: routeData received:", routeData);
+
     if (routeData) {
       const startLatLon: L.LatLngTuple = [routeData.start.lat, routeData.start.lon];
       const endLatLon: L.LatLngTuple = [routeData.end.lat, routeData.end.lon];
@@ -44,9 +47,16 @@ export function MapView({ routeData }: MapViewProps) {
   const defaultCenter: L.LatLngTuple = [1.2921, 36.8219];
   const defaultZoom = 13;
 
+  // OSRM returns coordinates as [longitude, latitude]. Leaflet expects [latitude, longitude].
+  // So, we map coord[1] (latitude) to the first element and coord[0] (longitude) to the second.
   const pathCoordinates: L.LatLngTuple[] = routeData?.geometry.coordinates.map(
-    (coord) => [coord[1], coord[0]], // OSRM returns [lon, lat], Leaflet expects [lat, lon]
+    (coord) => [coord[1], coord[0]],
   ) || [];
+
+  // ⭐ NEW: Log routeData and pathCoordinates in MapView ⭐
+  console.log("MapView: routeData prop:", routeData);
+  console.log("MapView: Transformed pathCoordinates:", pathCoordinates);
+
 
   return (
     <div className="relative w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 overflow-hidden">
@@ -63,8 +73,11 @@ export function MapView({ routeData }: MapViewProps) {
 
         {routeData && (
           <>
+            {/* Markers for start and end points */}
             <Marker position={[routeData.start.lat, routeData.start.lon]} />
             <Marker position={[routeData.end.lat, routeData.end.lon]} />
+            
+            {/* Polyline for the route path */}
             <Polyline
               positions={pathCoordinates}
               color="blue"

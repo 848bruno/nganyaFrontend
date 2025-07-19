@@ -1,7 +1,9 @@
+import React from 'react';
 import { Star, Users, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "@tanstack/react-router";
+import { cn } from '@/lib/utils'; // Assuming you have a utility for class names
 
 interface VehicleCardProps {
   id: string;
@@ -19,6 +21,8 @@ interface VehicleCardProps {
   vehicleInfo?: string;
   isSelected?: boolean;
   onSelect: (id: string) => void;
+  // Note: pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude
+  // were removed from this interface as per your updated code.
 }
 
 export function VehicleCard({
@@ -35,11 +39,13 @@ export function VehicleCard({
 }: VehicleCardProps) {
   return (
     <div
-      className={`p-4 rounded-xl border cursor-pointer transition-all duration-200 ${
-        isSelected
-          ? "border-primary bg-primary/5 shadow-md"
-          : "border-border bg-card hover:border-primary/50 hover:shadow-sm"
-      }`}
+      className={cn(
+        `p-4 rounded-xl border cursor-pointer transition-all duration-200 ${
+          isSelected
+            ? "border-primary bg-primary/5 shadow-md"
+            : "border-border bg-card hover:border-primary/50 hover:shadow-sm"
+        }`
+      )}
       onClick={() => onSelect(id)}
     >
       <div className="flex items-center justify-between mb-3">

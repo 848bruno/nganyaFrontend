@@ -1,18 +1,87 @@
-// src/pages/customer-dashboard.tsx
+// src/pages/customer/CustomerDashboard.tsx
 import { MapView } from "@/components/MapView";
 import { BookingPanel } from "@/components/BookingPanel";
 import { DashboardSidebar } from "@/components/dashboard-sidebar";
-import { useSearch, createFileRoute } from "@tanstack/react-router"; // Use useSearch for route data
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 
+// ⭐ UPDATED: Define the search parameters interface to store only geometry coordinates ⭐
+interface CustomerDashboardSearch {
+  pickupLat?: number;
+  pickupLng?: number;
+  destinationLat?: number;
+  destinationLng?: number;
+  geometryCoordinates?: [number, number][]; // ⭐ Changed from 'geometry' to 'geometryCoordinates' ⭐
+  distance?: number;
+  duration?: number;
+  instructions?: any[];
+}
 
 export const Route = createFileRoute('/dashboard/customer')({
   component: CustomerDashboard,
+  // ⭐ UPDATED: Define the search schema for type safety and defaults, handling geometryCoordinates ⭐
+  validateSearch: (search: Record<string, unknown>): CustomerDashboardSearch => {
+    return {
+      pickupLat: typeof search.pickupLat === 'number' ? search.pickupLat : undefined,
+      pickupLng: typeof search.pickupLng === 'number' ? search.pickupLng : undefined,
+      destinationLat: typeof search.destinationLat === 'number' ? search.destinationLat : undefined,
+      destinationLng: typeof search.destinationLng === 'number' ? search.destinationLng : undefined,
+      // ⭐ UPDATED: Validate geometryCoordinates as an array ⭐
+      geometryCoordinates: Array.isArray(search.geometryCoordinates) ? search.geometryCoordinates as [number, number][] : undefined,
+      distance: typeof search.distance === 'number' ? search.distance : undefined,
+      duration: typeof search.duration === 'number' ? search.duration : undefined,
+      instructions: Array.isArray(search.instructions) ? search.instructions : undefined,
+    };
+  },
 })
 
 export function CustomerDashboard() {
-  // State to hold the route data from the booking panel
-  const [routeData, setRouteData] = useState(null);
+  const routeSearch = useSearch({ from: '/dashboard/customer' });
+  const navigate = useNavigate();
+
+  // ⭐ UPDATED: Function to update route data in the URL search parameters, passing only coordinates ⭐
+  const setRouteData = (data: {
+    pickupLat?: number;
+    pickupLng?: number;
+    destinationLat?: number;
+    destinationLng?: number;
+    geometry?: { coordinates: [number, number][] }; // Expecting geometry with coordinates
+    distance?: number;
+    duration?: number;
+    instructions?: any[];
+  } | null) => {
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        pickupLat: data?.pickupLat,
+        pickupLng: data?.pickupLng,
+        destinationLat: data?.destinationLat,
+        destinationLng: data?.destinationLng,
+        geometryCoordinates: data?.geometry?.coordinates, // ⭐ Pass only the coordinates array ⭐
+        distance: data?.distance,
+        duration: data?.duration,
+        instructions: data?.instructions,
+      }),
+      replace: true,
+    });
+  };
+
+  // ⭐ UPDATED: Convert routeSearch data to the format expected by MapView ⭐
+  const mapRouteData = routeSearch.pickupLat !== undefined && routeSearch.pickupLng !== undefined &&
+                       routeSearch.destinationLat !== undefined && routeSearch.destinationLng !== undefined &&
+                       routeSearch.geometryCoordinates
+    ? {
+        start: { lat: routeSearch.pickupLat, lon: routeSearch.pickupLng },
+        end: { lat: routeSearch.destinationLat, lon: routeSearch.destinationLng },
+        geometry: {
+          type: 'LineString', // Assuming it's always a LineString for a route
+          coordinates: routeSearch.geometryCoordinates,
+        },
+        distance: routeSearch.distance || 0,
+        duration: routeSearch.duration || 0,
+        instructions: routeSearch.instructions || [],
+      }
+    : null;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -22,8 +91,8 @@ export function CustomerDashboard() {
         <div className="h-screen flex relative">
           {/* Map View - Full screen on mobile, left side on desktop */}
           <div className="flex-1 relative">
-            {/* Pass routeData to MapView */}
-            <MapView routeData={routeData} />
+            {/* Pass mapRouteData to MapView */}
+            <MapView routeData={mapRouteData} />
 
             {/* Mobile booking panel - slides up from bottom */}
             <div className="absolute bottom-0 left-0 right-0 lg:hidden">
@@ -41,7 +110,7 @@ export function CustomerDashboard() {
                     All Systems Online
                   </p>
                   <p className="text-xs text-green-600 dark:text-green-400">
-                    12 drivers nearby • Avg wait: 3 min
+                    12 drivers nearby • Avg wait: 3 min {/* This is mock data, could be dynamic */}
                   </p>
                 </div>
               </div>
@@ -80,7 +149,7 @@ export function CustomerDashboard() {
 
                 {/* Get Started for new users */}
                 <button
-                  onClick={() => {}} // No longer using useNavigate to navigate to "/"
+                  onClick={() => {}}
                   className="w-full p-2 bg-gradient-to-r from-primary to-blue-600 text-white rounded-xl font-medium text-sm hover:shadow-md transition-all"
                 >
                   New User? Get Started →
