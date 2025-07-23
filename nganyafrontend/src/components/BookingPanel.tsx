@@ -1,3 +1,4 @@
+// src/components/BookingPanel.tsx
 import { useState, useEffect, useCallback } from 'react';
 import {
   MapPin,
@@ -9,13 +10,15 @@ import {
   Zap,
   Share2,
   Loader2,
+  MessageSquare, // Import MessageSquare icon
+  Car, // Import Car icon for suggested drivers section
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { VehicleCard } from './VehicleCard';
+import { VehicleCard } from './VehicleCard'; // Assuming this component exists or will be created
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/use-toast';
 import debounce from 'lodash.debounce';
@@ -165,9 +168,11 @@ interface BookingPanelProps {
     duration?: number;
     instructions?: any[];
   } | null) => void;
+  // ⭐ NEW PROP: Chat initiation function ⭐
+  onInitiateChat: (driverId: string) => void;
 }
 
-export function BookingPanel({ setRouteData }: BookingPanelProps) {
+export function BookingPanel({ setRouteData, onInitiateChat }: BookingPanelProps) {
   const { user } = useAuth();
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [pickup, setPickup] = useState('');
@@ -347,7 +352,7 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
           estimatedPrice: selectedVehicleData.price, // Add estimatedPrice
         };
 
-        const ride = await mockRideshareService.createRide(rideData); // ⭐ Changed to mockRideshareService ⭐
+        const ride = await mockRideshareService.createRide(rideData);
 
         toast({
           title: 'Ride Requested!',
@@ -483,30 +488,35 @@ export function BookingPanel({ setRouteData }: BookingPanelProps) {
                   <span>Searching for vehicles...</span>
                 </div>
               ) : suggestedVehicles.length > 0 ? (
-                suggestedVehicles.map((vehicle) => (
-                  <VehicleCard
-                    key={vehicle.id}
-                    id={vehicle.id}
-                    type={vehicle.type}
-                    price={vehicle.price}
-                    estimatedTime={vehicle.estimatedTime}
-                    capacity={vehicle.capacity}
-                    vehicleInfo={vehicle.vehicleInfo}
-                    driver={{
-                      name: vehicle.driver.name,
-                      rating: vehicle.driver.averageRating || 0,
-                      image: vehicle.driver.email ? `https://api.dicebear.com/7.x/initials/svg?seed=${vehicle.driver.email}` : '/placeholder.svg',
-                      trips: vehicle.driver.totalRidesCompleted || 0,
-                    }}
-                    isSelected={selectedVehicleId === vehicle.id}
-                    onSelect={setSelectedVehicleId}
-                    // ⭐ NOTE: These props need to be added to VehicleCardProps interface in VehicleCard.tsx ⭐
-                    pickupLatitude={vehicle.pickupLatitude}
-                    pickupLongitude={vehicle.pickupLongitude}
-                    destinationLatitude={vehicle.destinationLatitude}
-                    destinationLongitude={vehicle.destinationLongitude}
-                  />
-                ))
+                // ⭐ NEW: Suggested Nearest Drivers Section ⭐
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg space-y-3 dark:bg-gray-700">
+                  <h3 className="text-lg font-semibold text-gray-800 dark:text-white flex items-center gap-2">
+                    <Car size={20} /> Suggested Drivers
+                  </h3>
+                  <div className="space-y-4">
+                    {suggestedVehicles.map((vehicle) => (
+                      <VehicleCard
+                        key={vehicle.id}
+                        id={vehicle.id}
+                        type={vehicle.type}
+                        price={vehicle.price}
+                        estimatedTime={vehicle.estimatedTime}
+                        capacity={vehicle.capacity}
+                        vehicleInfo={vehicle.vehicleInfo}
+                        driver={{
+                          id: vehicle.driver.id, // Pass driver ID
+                          name: vehicle.driver.name,
+                          rating: vehicle.driver.averageRating || 0,
+                          image: vehicle.driver.email ? `https://api.dicebear.com/7.x/initials/svg?seed=${vehicle.driver.email}` : '/placeholder.svg',
+                          trips: vehicle.driver.totalRidesCompleted || 0,
+                        }}
+                        isSelected={selectedVehicleId === vehicle.id}
+                        onSelect={setSelectedVehicleId}
+                        onInitiateChat={onInitiateChat} // ⭐ Pass chat initiation function ⭐
+                      />
+                    ))}
+                  </div>
+                </div>
               ) : (
                 <p className="text-center text-muted-foreground">
                   Enter pickup and destination to find available vehicles.

@@ -1,5 +1,6 @@
+// src/components/VehicleCard.tsx
 import React from 'react';
-import { Star, Users, Clock } from "lucide-react";
+import { Star, Users, Clock, MessageSquare } from "lucide-react"; // Import MessageSquare icon
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "@tanstack/react-router";
@@ -9,6 +10,7 @@ interface VehicleCardProps {
   id: string;
   type: string;
   driver: {
+    id: string; // Ensure driver ID is available for chat initiation
     name: string;
     rating: number;
     image?: string;
@@ -21,8 +23,7 @@ interface VehicleCardProps {
   vehicleInfo?: string;
   isSelected?: boolean;
   onSelect: (id: string) => void;
-  // Note: pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude
-  // were removed from this interface as per your updated code.
+  onInitiateChat: (driverId: string) => void; // New prop for initiating chat
 }
 
 export function VehicleCard({
@@ -36,6 +37,7 @@ export function VehicleCard({
   vehicleInfo,
   isSelected,
   onSelect,
+  onInitiateChat, // Destructure new prop
 }: VehicleCardProps) {
   return (
     <div
@@ -46,7 +48,7 @@ export function VehicleCard({
             : "border-border bg-card hover:border-primary/50 hover:shadow-sm"
         }`
       )}
-      onClick={() => onSelect(id)}
+      onClick={() => onSelect(id)} // Selecting the card for ride booking
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
@@ -112,15 +114,38 @@ export function VehicleCard({
       </div>
 
       {isSelected && (
-        <Link to="/booking">
+        <div className="flex gap-2 mt-3">
+          {/* Chat Button */}
           <Button
-            className="w-full mt-3"
+            className="flex-1"
             size="sm"
-            onClick={(e) => e.stopPropagation()}
+            variant="outline" // Use outline variant for the chat button
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent card selection when clicking chat button
+              onInitiateChat(driver.id); // Call the chat initiation function
+            }}
+          >
+            <MessageSquare className="w-4 h-4 mr-2" />
+            Chat
+          </Button>
+          {/* Book Now Button */}
+          {/* Removed Link wrapper to directly use Button, as Link implies navigation,
+              while Book Now should likely trigger a booking action within the current page.
+              If it navigates, wrap the Button with Link again. */}
+          <Button
+            className="flex-1"
+            size="sm"
+            onClick={(e) => {
+                e.stopPropagation(); // Prevent card selection when clicking Book Now
+                // This onClick should trigger the booking logic in BookingPanel
+                // Since BookingPanel handles the actual booking, VehicleCard doesn't need to know the full booking flow.
+                // For now, it just prevents parent click and acts as a placeholder.
+                // The BookingPanel's main "Confirm Booking" button will handle the final booking.
+            }}
           >
             Book Now
           </Button>
-        </Link>
+        </div>
       )}
     </div>
   );

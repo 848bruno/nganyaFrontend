@@ -19,13 +19,26 @@ import type {
   DriverDashboardStats,
 } from './types';
 
+// Add this interface for the route service response
+interface RouteServiceResponse {
+  start: { lat: number; lon: number };
+  end: { lat: number; lon: number };
+  geometry: {
+    type: string; // Ensure this is always present
+    coordinates: [number, number][]; // OSRM typically returns [lon, lat]
+  };
+  distance: number;
+  duration: number;
+  instructions: any[];
+}
+
 class RideshareService {
   constructor() {
     // ⭐ NEW DEBUG LOG: Confirm service instance and available methods ⭐
     console.log("RideshareService instance created.");
-    console.log("  Methods available:", Object.keys(Object.getPrototypeOf(this)));
-    console.log("  updateDriverStatus available:", typeof this.updateDriverStatus === 'function');
-    console.log("  updateDriverLocation available:", typeof this.updateDriverLocation === 'function');
+    console.log("   Methods available:", Object.keys(Object.getPrototypeOf(this)));
+    console.log("   updateDriverStatus available:", typeof this.updateDriverStatus === 'function');
+    console.log("   updateDriverLocation available:", typeof this.updateDriverLocation === 'function');
   }
 
   // Admin Stats
@@ -86,20 +99,24 @@ class RideshareService {
     }
   }
 
-  async updateDriverLocation(latitude: number, longitude: number): Promise<void> {
+  // ⭐ UPDATED: Changed return type to Promise<User> ⭐
+  async updateDriverLocation(latitude: number, longitude: number): Promise<User> {
     try {
-      await api.post('/users/location', { latitude, longitude });
+      const res = await api.post<ApiResponse<User>>('/users/location', { latitude, longitude });
       console.log('Driver location updated successfully on server.');
+      return res.data.data; // Return the updated user data
     } catch (error: any) {
       console.error('Error sending driver location to server:', error.response?.data || error.message || error);
       throw error;
     }
   }
 
-  async updateDriverStatus(isOnline: boolean): Promise<void> {
+  // ⭐ UPDATED: Changed return type to Promise<User> ⭐
+  async updateDriverStatus(isOnline: boolean): Promise<User> {
     try {
-      await api.patch('/users/me/status', { isOnline });
+      const res = await api.patch<ApiResponse<User>>('/users/me/status', { isOnline });
       console.log('Driver status updated successfully on server.');
+      return res.data.data; // Return the updated user data
     } catch (error: any) {
       console.error('Error updating driver status on server:', error.response?.data || error.message || error);
       throw error;
@@ -140,6 +157,49 @@ class RideshareService {
         data: [], items: [], total: 0, page: params?.page || 1, limit: params?.limit || 10,
         totalPages: 0, hasNextPage: false, hasPreviousPage: false,
       };
+    }
+  }
+
+
+  async getNearestDrivers(
+    latitude: number,
+    longitude: number,
+    maxDistanceKm: number = 5,
+    limit: number = 5,
+  ): Promise<(User & { distance?: number })[]> {
+    try {
+      const res = await api.get<ApiResponse<(User & { distance?: number })[]>>('/users/drivers/nearest', {
+        params: { latitude, longitude, maxDistanceKm, limit },
+      });
+      return res.data.data;
+    } catch (error) {
+      console.error('Error fetching nearest drivers:', error);
+      throw error;
+    }
+  }
+
+  
+  async geocodeAddress(address: string): Promise<{ lat: number; lon: number }> {
+    try {
+      const res = await api.post<ApiResponse<{ lat: number; lon: number }>>('/route/geocode', { address });
+      return res.data.data;
+    } catch (error) {
+      console.error('Error geocoding address:', error);
+      throw error;
+    }
+  }
+
+  // ⭐ Corrected METHOD: getRoute to send lat,lon to backend and return specific type ⭐
+  async getRoute(start: [number, number], end: [number, number]): Promise<RouteServiceResponse> {
+    try {
+      const res = await api.post<ApiResponse<RouteServiceResponse>>('/route/calculate', {
+        pickup: `${start[0]},${start[1]}`, // Sending as "latitude,longitude"
+        dropoff: `${end[0]},${end[1]}`,   // Sending as "latitude,longitude"
+      });
+      return res.data.data;
+    } catch (error: any) {
+      console.error('Error getting route:', error.response?.data || error.message || error);
+      throw error;
     }
   }
 
@@ -419,9 +479,11 @@ class RideshareService {
     }
   }
 
-  async deleteDelivery(id: string): Promise<void> {
+  // ⭐ MODIFIED METHOD: deleteDelivery to return boolean ⭐
+  async deleteDelivery(id: string): Promise<boolean> {
     try {
       await api.delete<ApiResponse<void>>(`/deliveries/${id}`);
+      return true; // Return true on success
     } catch (error: any) {
       console.error("❌ deleteDelivery API call failed. Error:", error.response?.data || error.message || error);
       throw error;
@@ -459,9 +521,11 @@ class RideshareService {
     }
   }
 
-  async deletePayment(id: string): Promise<void> {
+  // ⭐ MODIFIED METHOD: deletePayment to return boolean ⭐
+  async deletePayment(id: string): Promise<boolean> {
     try {
       await api.delete<ApiResponse<void>>(`/payments/${id}`);
+      return true; // Return true on success
     } catch (error: any) {
       console.error("❌ deletePayment API call failed. Error:", error.response?.data || error.message || error);
       throw error;
@@ -503,9 +567,11 @@ class RideshareService {
     }
   }
 
-  async deleteReview(id: string): Promise<void> {
+  // ⭐ MODIFIED METHOD: deleteReview to return boolean ⭐
+  async deleteReview(id: string): Promise<boolean> {
     try {
       await api.delete<ApiResponse<void>>(`/reviews/${id}`);
+      return true; // Return true on success
     } catch (error: any) {
       console.error("❌ deleteReview API call failed. Error:", error.response?.data || error.message || error);
       throw error;

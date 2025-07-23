@@ -1,3 +1,4 @@
+// src/components/dashboard-sidebar.tsx
 import {
   Home,
   Car,
@@ -17,12 +18,14 @@ import {
   User,
   ChevronLeft,
   Menu,
+  MessageSquare,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { useContext, useState } from "react";
+import { useContext, useState, useMemo } from "react";
 import { AuthContext } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { Link, useRouter } from "@tanstack/react-router";
@@ -30,24 +33,27 @@ import { Link, useRouter } from "@tanstack/react-router";
 interface SidebarItem {
   icon: any;
   label: string;
-  href: string;
+  href?: string;
   badge?: string;
   subItems?: SidebarItem[];
+  onClick?: () => void;
 }
 
 interface DashboardSidebarProps {
   userType: "customer" | "driver" | "admin";
+  setIsChatOpen?: (isOpen: boolean) => void; // Prop to control chat modal
 }
 
-const sidebarItems = {
+const sidebarItems: Record<DashboardSidebarProps['userType'], Omit<SidebarItem, 'onClick'>[]> = {
   customer: [
-    { icon: Home, label: "Dashboard", href: "/index" },
+    { icon: Home, label: "Home", href: "/" },
     { icon: Car, label: "Book Ride", href: "/Booking" },
     { icon: Users, label: "Carpool", href: "/Carpool" },
     { icon: Package, label: "Delivery", href: "/Delivery" },
     { icon: MapPin, label: "My Trips", href: "/MyTrips" },
     { icon: CreditCard, label: "Payments", href: "/Payments" },
     { icon: Star, label: "Reviews", href: "/Reviews" },
+    { icon: MessageSquare, label: "Chat", badge: "New" },
     {
       icon: Bell,
       label: "Notifications",
@@ -56,13 +62,14 @@ const sidebarItems = {
     },
   ],
   driver: [
-    { icon: Home, label: "Home", href: "/index" },
+    { icon: Home, label: "Home", href: "/" },
     { icon: Car, label: "My Rides", href: "/Rides" },
     { icon: Route, label: "Routes", href: "/Routes" },
     { icon: Truck, label: "Vehicle", href: "/Vehicle" },
     { icon: BarChart3, label: "Earnings", href: "/Earnings" },
     { icon: Calendar, label: "Schedule", href: "/Schedule" },
     { icon: Star, label: "Reviews", href: "/Reviews" },
+    { icon: MessageSquare, label: "Chat", badge: "New" },
     {
       icon: Bell,
       label: "Notifications",
@@ -88,13 +95,32 @@ const sidebarItems = {
   ],
 };
 
-export function DashboardSidebar({ userType }: DashboardSidebarProps) {
+export function DashboardSidebar({ userType, setIsChatOpen }: DashboardSidebarProps) {
   const router = useRouter();
   const authContext = useContext(AuthContext);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const items = sidebarItems[userType] || [];
+  // Debugging: Log when DashboardSidebar renders and what setIsChatOpen it receives
+  console.log("DashboardSidebar rendered. userType:", userType, "setIsChatOpen provided:", !!setIsChatOpen);
+
+  const items = useMemo(() => {
+    const baseItems = sidebarItems[userType] || [];
+    return baseItems.map(item => {
+      if (item.label === "Chat") { // Check only by label
+        // Debugging: Confirm if setIsChatOpen is available when mapping "Chat" item
+        console.log(`Mapping "Chat" item. setIsChatOpen is ${setIsChatOpen ? "available" : "NOT available"}`);
+        if (setIsChatOpen) { // Only add onClick if setIsChatOpen is actually provided
+          return { ...item, onClick: () => {
+            console.log("Chat button clicked! Attempting to open chat."); // Debugging: Log on click
+            setIsChatOpen(true);
+            setMobileOpen(false); // Close mobile sidebar after opening chat
+          }};
+        }
+      }
+      return item as SidebarItem; // Ensure type compatibility
+    });
+  }, [userType, setIsChatOpen]);
 
   const handleSignOut = () => {
     if (authContext?.logout) {
@@ -118,59 +144,16 @@ export function DashboardSidebar({ userType }: DashboardSidebarProps) {
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
-     
-
-      {/* User Info */}
-      {/* <div className="p-6 border-b border-border">
-        <div className="flex items-center gap-3">
-          <Avatar className="w-10 h-10">
-            <AvatarImage src="/placeholder.svg" />
-            <AvatarFallback className="bg-primary/10">
-              {authContext?.user?.name?.charAt(0).toUpperCase() || "U"}
-            </AvatarFallback>
-          </Avatar>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="font-medium truncate">
-                {authContext?.user?.name || "User"}
-              </p>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-xs capitalize">
-                  {authContext?.user?.role || userType}
-                </Badge>
-                {userType === "driver" && (
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="text-xs text-muted-foreground">
-                      Online
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div> */}
+      {/* User Info - Remains commented */}
 
       {/* Navigation */}
       <div className="flex-1 p-4 space-y-2 overflow-y-auto">
         {items.map((item, index) => {
           const Icon = item.icon;
-          const active = isActive(item.href);
+          const active = item.href ? isActive(item.href) : false;
 
-          return (
-            <Link
-              key={index}
-              to={item.href}
-              className={cn(
-                "flex items-center gap-3 h-11 px-4 py-2 rounded-md text-sm font-medium transition-colors",
-                collapsed ? "px-3" : "px-4",
-                active
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "hover:bg-accent hover:text-accent-foreground"
-              )}
-              onClick={() => setMobileOpen(false)}
-            >
+          const content = (
+            <>
               <Icon className="w-5 h-5 flex-shrink-0" />
               {!collapsed && (
                 <>
@@ -185,14 +168,56 @@ export function DashboardSidebar({ userType }: DashboardSidebarProps) {
                   )}
                 </>
               )}
-            </Link>
+            </>
           );
+
+          if (item.href) {
+            return (
+              <Link
+                key={index}
+                to={item.href}
+                className={cn(
+                  "flex items-center gap-3 h-11 px-4 py-2 rounded-md text-sm font-medium transition-colors",
+                  collapsed ? "px-3" : "px-4",
+                  active
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "hover:bg-accent hover:text-accent-foreground"
+                )}
+                onClick={() => setMobileOpen(false)}
+              >
+                {content}
+              </Link>
+            );
+          } else {
+            return (
+              <button
+                key={index}
+                onClick={() => {
+                  // Debugging: Log when the button's onClick is actually invoked
+                  console.log(`Button for "${item.label}" clicked.`);
+                  if (item.onClick) {
+                    item.onClick();
+                  } else {
+                    console.warn(`No onClick handler for "${item.label}" item.`);
+                  }
+                  setMobileOpen(false);
+                }}
+                className={cn(
+                  "flex items-center gap-3 h-11 px-4 py-2 rounded-md text-sm font-medium transition-colors w-full",
+                  collapsed ? "px-3" : "px-4",
+                  "hover:bg-accent hover:text-accent-foreground"
+                )}
+              >
+                {content}
+              </button>
+            );
+          }
         })}
       </div>
 
       <Separator />
 
-      {/* Footer Actions */}
+      {/* Footer Actions - unchanged */}
       <div className="p-4 space-y-1">
         <Link
           to="/profile"
@@ -200,6 +225,7 @@ export function DashboardSidebar({ userType }: DashboardSidebarProps) {
             "flex items-center gap-3 h-11 px-4 py-2 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
             collapsed ? "px-3" : "px-4",
           )}
+          onClick={() => setMobileOpen(false)}
         >
           <User className="w-5 h-5 flex-shrink-0" />
           {!collapsed && "Profile"}
@@ -211,6 +237,7 @@ export function DashboardSidebar({ userType }: DashboardSidebarProps) {
             "flex items-center gap-3 h-11 px-4 py-2 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
             collapsed ? "px-3" : "px-4",
           )}
+          onClick={() => setMobileOpen(false)}
         >
           <Settings className="w-5 h-5 flex-shrink-0" />
           {!collapsed && "Settings"}
@@ -222,6 +249,7 @@ export function DashboardSidebar({ userType }: DashboardSidebarProps) {
             "flex items-center gap-3 h-11 px-4 py-2 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
             collapsed ? "px-3" : "px-4",
           )}
+          onClick={() => setMobileOpen(false)}
         >
           <HelpCircle className="w-5 h-5 flex-shrink-0" />
           {!collapsed && "Help"}
