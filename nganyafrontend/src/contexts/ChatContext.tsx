@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { toast } from '@/components/ui/use-toast';
 
+// ⭐ Updated interfaces to reflect backend changes ⭐
 export interface Conversation {
   id: string;
   participants: { id: string; name: string; email: string }[];
@@ -12,35 +13,46 @@ export interface Conversation {
   lastMessageAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  unreadCount?: number; // Add unreadCount
+  // unreadCount will now come from MessageStatus entity for the current user
+  // We'll calculate it on the frontend based on the `messageStatuses` array
+  unreadCount?: number;
+  messageStatuses?: { // Add messageStatuses relation
+    id: string;
+    userId: string;
+    conversationId: string;
+    lastReadMessageId: string | null;
+    unreadCount: number;
+    updatedAt: Date;
+  }[];
 }
 
-export interface ChatMessage {
+export interface Message { // ⭐ Renamed from ChatMessage to Message ⭐
   id: string;
   conversationId: string;
   senderId: string;
   sender: { id: string; name: string; email: string };
   content: string;
   createdAt: Date;
-  status?: 'sent' | 'delivered' | 'read'; // Add status for messages
+  // status?: 'sent' | 'delivered' | 'read'; // Status will be derived from MessageStatus on backend
+  tempMessageId?: string; // For optimistic UI updates
 }
 
 interface ChatContextType {
   socket: Socket | null;
   conversations: Conversation[];
   selectedConversation: Conversation | null;
-  messages: ChatMessage[];
+  messages: Message[]; // ⭐ Changed to Message[] ⭐
   isLoadingConversations: boolean;
   isLoadingMessages: boolean;
-  isSendingMessage: boolean; // Added
-  connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error'; // Added
+  isSendingMessage: boolean;
+  connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
   error: string | null;
   selectConversation: (conversationId: string | null) => void;
-  sendMessage: (conversationId: string, content: string) => Promise<void>; // Make it async
-  createConversation: (participantIds: string[], title?: string) => Promise<void>; // Make it async
+  sendMessage: (conversationId: string, content: string) => Promise<void>;
+  createConversation: (participantIds: string[], title?: string) => Promise<void>;
   refetchConversations: () => void;
   refetchMessages: (conversationId: string) => void;
-  markMessagesAsRead: (conversationId: string) => void; // Added
+  markMessagesAsRead: (conversationId: string) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -55,19 +67,217 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const { isAuthenticated, accessToken, user, isLoading: isAuthLoading } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]); // ⭐ Changed to Message[] ⭐
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [isSendingMessage, setIsSendingMessage] = useState(false); // New state
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected'); // New state
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
   const [error, setError] = useState<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
+  const isSocketConnectedAndAuthenticatedRef = useRef<boolean>(false); 
 
-  // Effect for socket connection management
+  const selectedConversation = useMemo(() => {
+    console.log('ChatContext: Memoizing selectedConversation. ID:', selectedConversationId);
+    return conversations.find(conv => conv.id === selectedConversationId) || null;
+  }, [conversations, selectedConversationId]);
+
+  const markMessagesAsRead = useCallback((conversationId: string) => {
+    console.log(`ChatContext: Attempting to mark messages as read for conversation: ${conversationId}`);
+    if (socketRef.current && socketRef.current.connected && isAuthenticated) {
+      console.log(`ChatContext: Emitting 'markMessagesAsRead' for conversation: ${conversationId}`);
+      socketRef.current.emit('markMessagesAsRead', { conversationId });
+      // Optimistically update unread count to 0 locally
+      setConversations(prevConversations => {
+        const updated = prevConversations.map(conv => {
+          if (conv.id === conversationId) {
+            // Find the current user's message status and update its unreadCount
+            const updatedMessageStatuses = conv.messageStatuses?.map(ms =>
+              ms.userId === user?.id ? { ...ms, unreadCount: 0 } : ms
+            ) || [];
+            return { ...conv, unreadCount: 0, messageStatuses: updatedMessageStatuses };
+          }
+          return conv;
+        });
+        console.log('ChatContext: Conversations updated locally after markMessagesAsRead (unreadCount set to 0).');
+        return updated;
+      });
+    } else {
+      console.warn('ChatContext: Cannot mark messages as read: Socket not connected or not authenticated.');
+    }
+  }, [isAuthenticated, user?.id]); // Dependency on user?.id for messageStatuses update
+
+  const handleMessage = useCallback((message: Message) => { // ⭐ Changed to Message ⭐
+    console.log('ChatContext: Received `message` event:', message);
+    const incomingMessage = { ...message, createdAt: new Date(message.createdAt) };
+
+    setMessages((prevMessages) => {
+      // If the incoming message has a tempMessageId, find and replace the temporary message
+      if (incomingMessage.tempMessageId) {
+        const existingIndex = prevMessages.findIndex(m => m.id === incomingMessage.tempMessageId);
+        if (existingIndex > -1) {
+          const updatedMessages = [...prevMessages];
+          updatedMessages[existingIndex] = { ...incomingMessage, id: incomingMessage.id }; // Replace temp ID with real ID
+          console.log('ChatContext: Updated existing temporary message with real ID:', incomingMessage.id);
+          return updatedMessages;
+        }
+      }
+      // Otherwise, add new message or update if real ID already exists (e.g., from refetch)
+      const existingIndex = prevMessages.findIndex(m => m.id === incomingMessage.id);
+      if (existingIndex > -1) {
+        const updatedMessages = [...prevMessages];
+        updatedMessages[existingIndex] = { ...updatedMessages[existingIndex], ...incomingMessage };
+        console.log('ChatContext: Updated existing message with ID:', incomingMessage.id);
+        return updatedMessages;
+      } else {
+        console.log('ChatContext: Added new message with ID:', incomingMessage.id);
+        return [...prevMessages, incomingMessage].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      }
+    });
+
+    setConversations((prevConversations) => {
+      let conversationFound = false;
+      const updatedConversations = prevConversations.map((conv) => {
+        if (conv.id === incomingMessage.conversationId) {
+          conversationFound = true;
+          const isFromOtherUser = incomingMessage.senderId !== user?.id;
+          const isNotSelected = selectedConversationId !== incomingMessage.conversationId;
+          const incrementUnread = isFromOtherUser && isNotSelected;
+
+          console.log(`ChatContext: Updating conversation ${conv.id} with new message. Increment unread: ${incrementUnread}`);
+          
+          // Update last message details
+          const updatedConv = {
+            ...conv,
+            lastMessageText: incomingMessage.content,
+            lastMessageAt: incomingMessage.createdAt,
+          };
+
+          // Update unread count in messageStatuses for relevant user
+          if (incrementUnread && updatedConv.messageStatuses) {
+            updatedConv.messageStatuses = updatedConv.messageStatuses.map(ms => {
+              if (ms.userId === user?.id) { // This is the current user's status
+                return { ...ms, unreadCount: (ms.unreadCount || 0) + 1 };
+              }
+              return ms;
+            });
+            // Update the top-level unreadCount for display
+            updatedConv.unreadCount = (updatedConv.unreadCount || 0) + 1;
+          }
+          return updatedConv;
+        }
+        return conv;
+      });
+
+      if (!conversationFound) {
+        console.warn('ChatContext: Received message for an unknown conversation. Consider refetching conversations.');
+        // Potentially trigger refetchConversations here if a new conversation might have been created
+        // and the client wasn't aware (e.g., if another user initiated it).
+      }
+      console.log('ChatContext: Conversations array updated after new message. Sorting conversations.');
+      return updatedConversations.sort((a, b) => {
+        const dateA = a.lastMessageAt?.getTime() || 0;
+        const dateB = b.lastMessageAt?.getTime() || 0;
+        return dateB - dateA;
+      });
+    });
+
+    if (selectedConversationId === incomingMessage.conversationId && incomingMessage.senderId !== user?.id) {
+      console.log('ChatContext: Incoming message is for selected conversation and from another user. Marking as read.');
+      markMessagesAsRead(incomingMessage.conversationId);
+    }
+  }, [setMessages, setConversations, user?.id, selectedConversationId, markMessagesAsRead]);
+
+  const handleConversationsEvent = useCallback((data: { event: string; data: Conversation[] }) => {
+    console.log('ChatContext: Received `conversations` event. Data length:', data.data.length);
+    const parsedConversations = data.data.map(conv => {
+      // Calculate unreadCount for the current user from messageStatuses
+      const currentUserStatus = conv.messageStatuses?.find(ms => ms.userId === user?.id);
+      return {
+        ...conv,
+        lastMessageAt: conv.lastMessageAt ? new Date(conv.lastMessageAt) : null,
+        createdAt: new Date(conv.createdAt),
+        updatedAt: new Date(conv.updatedAt),
+        unreadCount: currentUserStatus ? currentUserStatus.unreadCount : 0, // Set unreadCount from status
+      };
+    });
+    setConversations(parsedConversations.sort((a, b) => {
+      const dateA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const dateB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return dateB - dateA;
+    }));
+    console.log('ChatContext: setIsLoadingConversations(false)');
+    setIsLoadingConversations(false);
+  }, [setConversations, setIsLoadingConversations, user?.id]); // Add user?.id dependency for unreadCount calculation
+
+  const handleNewConversation = useCallback((conversation: Conversation) => {
+    console.log('ChatContext: Received `newConversation` event:', conversation);
+    const newConvParsed: Conversation = {
+      ...conversation,
+      lastMessageAt: conversation.lastMessageAt ? new Date(conversation.lastMessageAt) : null,
+      createdAt: new Date(conversation.createdAt),
+      updatedAt: new Date(conversation.updatedAt),
+      // Calculate unreadCount for the current user from messageStatuses
+      unreadCount: conversation.messageStatuses?.find(ms => ms.userId === user?.id)?.unreadCount || 0,
+    };
+
+    setConversations((prev) => {
+      if (prev.some(conv => conv.id === newConvParsed.id)) {
+        console.log('ChatContext: New conversation already exists, updating it.');
+        return prev.map(c => c.id === newConvParsed.id ? newConvParsed : c);
+      }
+      console.log('ChatContext: Adding new conversation to list and sorting.');
+      return [newConvParsed, ...prev].sort((a, b) => {
+        const dateA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+        const dateB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+        return dateB - dateA;
+      });
+    });
+    console.log('ChatContext: Setting selectedConversationId to new conversation:', newConvParsed.id);
+    setSelectedConversationId(newConvParsed.id);
+  }, [setConversations, setSelectedConversationId, user?.id]); // Add user?.id dependency
+
+  const handleConversationMessagesEvent = useCallback((data: { event: string; data: Message[] }) => { // ⭐ Changed to Message[] ⭐
+    console.log('ChatContext: Received `conversationMessages` event. Data length:', data.data.length, 'for conversation:', selectedConversationId);
+    setMessages(data.data.map(msg => ({
+      ...msg,
+      createdAt: new Date(msg.createdAt),
+    })).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()));
+    console.log('ChatContext: setIsLoadingMessages(false)');
+    setIsLoadingMessages(false);
+    if (selectedConversationId) {
+      console.log('ChatContext: `conversationMessages` received for selected conversation, marking as read.');
+      markMessagesAsRead(selectedConversationId);
+    }
+  }, [setMessages, setIsLoadingMessages, selectedConversationId, markMessagesAsRead]);
+
+  const handleMessagesRead = useCallback((data: { conversationId: string; userId: string }) => {
+    console.log(`ChatContext: Received 'messagesRead' event for conversation ${data.conversationId} by user ${data.userId}.`);
+    // Update unread count for the relevant conversation for the user who read the messages
+    setConversations(prevConversations => {
+      return prevConversations.map(conv => {
+        if (conv.id === data.conversationId) {
+          const updatedMessageStatuses = conv.messageStatuses?.map(ms =>
+            ms.userId === data.userId ? { ...ms, unreadCount: 0 } : ms
+          ) || [];
+          // If the user who read the messages is the current user, update their top-level unreadCount
+          const updatedUnreadCount = (data.userId === user?.id) ? 0 : conv.unreadCount;
+          return { ...conv, unreadCount: updatedUnreadCount, messageStatuses: updatedMessageStatuses };
+        }
+        return conv;
+      });
+    });
+    // For messages in the currently selected conversation, if they were sent by the current user
+    // and read by another user, update their status to 'read' (if you re-introduce message status)
+    // For now, this is handled by the backend's markMessagesAsRead.
+  }, [setConversations, user?.id]);
+
+
+  // Main Effect for socket connection management and event listener registration
   useEffect(() => {
-    console.log('--- ChatContext useEffect START (Socket Connection) ---');
+    console.log('--- ChatContext useEffect START (Socket Connection Logic) ---');
+    console.log('ChatContext: Auth state check - isAuthLoading:', isAuthLoading, 'isAuthenticated:', isAuthenticated, 'accessToken present:', !!accessToken, 'user ID present:', !!user?.id);
 
     if (isAuthLoading) {
       console.log('ChatContext: AuthContext is still loading. Skipping socket connection attempt.');
@@ -76,34 +286,37 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
     if (!isAuthenticated || !accessToken || !user?.id) {
       if (socketRef.current) {
-        console.log('ChatContext: Auth state changed to unauthenticated, disconnecting socket.');
+        console.log('ChatContext: Auth state changed to unauthenticated/missing token. Disconnecting active socket.');
         socketRef.current.disconnect();
         socketRef.current = null;
         setSocket(null);
+        isSocketConnectedAndAuthenticatedRef.current = false;
       }
       setConversations([]);
-      setSelectedConversation(null);
+      setSelectedConversationId(null);
       setMessages([]);
       setConnectionStatus('disconnected');
-      console.log('ChatContext: Not authenticated. Skipping new socket connection attempt.');
+      console.log('ChatContext: Not authenticated or missing token/user. Skipping new socket connection and clearing state.');
       return;
     }
 
-    if (socketRef.current && socketRef.current.connected && (socketRef.current.io.opts.auth as any)?.token === accessToken) {
-      console.log('ChatContext: Socket already connected with current token. Skipping reconnection.');
+    if (isSocketConnectedAndAuthenticatedRef.current && socketRef.current && socketRef.current.connected && (socketRef.current.io.opts.auth as any)?.token === accessToken) {
+      console.log('ChatContext: Socket already successfully initialized and connected with current token. Skipping re-initialization.');
       return;
     }
 
-    if (socketRef.current) {
-      console.log('ChatContext: Disconnecting old socket before new connection.');
+    if (socketRef.current && (!socketRef.current.connected || (socketRef.current.io.opts.auth as any)?.token !== accessToken)) {
+      console.log('ChatContext: Disconnecting old socket before new connection (token changed or not connected).');
       socketRef.current.disconnect();
       socketRef.current = null;
       setSocket(null);
+      isSocketConnectedAndAuthenticatedRef.current = false;
     }
 
     const SOCKET_SERVER_URL = 'http://localhost:3001';
 
-    console.log('ChatContext: Attempting Socket.IO connection...');
+    console.log('ChatContext: All authentication checks passed. Attempting NEW Socket.IO connection...');
+    console.log('ChatContext: Socket connection attempt with accessToken (truncated):', accessToken ? accessToken.substring(0, 10) + '...' : 'N/A');
     setConnectionStatus('connecting');
 
     const newSocket = io(SOCKET_SERVER_URL, {
@@ -117,17 +330,18 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     socketRef.current = newSocket;
     setSocket(newSocket);
 
-    // Event Listeners
     newSocket.on('connect', () => {
-      console.log('ChatContext: WebSocket connected:', newSocket.id);
+      console.log('ChatContext: WebSocket `connect` event fired. Socket ID:', newSocket.id);
       setConnectionStatus('connected');
       setError(null);
+      isSocketConnectedAndAuthenticatedRef.current = true;
+      console.log('ChatContext: Emitting `getConversations` on connect.');
       newSocket.emit('getConversations');
+      console.log('ChatContext: setIsLoadingConversations(true)');
       setIsLoadingConversations(true);
     });
-
     newSocket.on('disconnect', (reason) => {
-      console.log('ChatContext: WebSocket disconnected:', reason);
+      console.log('ChatContext: WebSocket `disconnect` event fired. Reason:', reason);
       setConnectionStatus('disconnected');
       if (reason !== 'io client disconnect') {
         toast({
@@ -138,15 +352,16 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       }
       setSocket(null);
       socketRef.current = null;
+      isSocketConnectedAndAuthenticatedRef.current = false;
       setConversations([]);
-      setSelectedConversation(null);
+      setSelectedConversationId(null);
       setMessages([]);
       setIsLoadingConversations(false);
       setIsLoadingMessages(false);
+      console.log('ChatContext: State cleared on disconnect.');
     });
-
     newSocket.on('connect_error', (err) => {
-      console.error('ChatContext: WebSocket connection error:', err.message, err);
+      console.error('ChatContext: WebSocket `connect_error` event fired. Error:', err.message, err);
       setConnectionStatus('error');
       setError(`Connection error: ${err.message}`);
       toast({
@@ -156,12 +371,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       });
       setSocket(null);
       socketRef.current = null;
+      isSocketConnectedAndAuthenticatedRef.current = false;
       setIsLoadingConversations(false);
       setIsLoadingMessages(false);
     });
-
     newSocket.on('error', (data: { message: string; details?: any }) => {
-      console.error('ChatContext: WebSocket server error event:', data);
+      console.error('ChatContext: WebSocket `error` event from server:', data);
       setError(`Server error: ${data.message}`);
       toast({
         title: 'Chat Error',
@@ -170,285 +385,215 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       });
     });
 
-    newSocket.on('message', (message: ChatMessage) => {
-      console.log('ChatContext: Received message:', message);
-      // Optimistically add message if it's from current user and not yet in state (race condition guard)
-      if (message.senderId === user?.id && messages.some(m => m.id === message.id)) {
-        // Message already exists (was optimistically added by sendMessage), just update its status
-        setMessages(prevMessages => prevMessages.map(m => m.id === message.id ? { ...m, status: message.status || 'sent' } : m));
-      } else {
-        // Add new message
-        setMessages((prevMessages) => [...prevMessages, { ...message, createdAt: new Date(message.createdAt) }]);
-      }
+    newSocket.on('message', handleMessage);
+    newSocket.on('conversations', handleConversationsEvent);
+    newSocket.on('newConversation', handleNewConversation);
+    newSocket.on('conversationMessages', handleConversationMessagesEvent);
+    newSocket.on('messagesRead', handleMessagesRead);
 
-      setConversations((prevConversations) => {
-        const updatedConversations = prevConversations.map((conv) =>
-          conv.id === message.conversationId
-            ? { ...conv, lastMessageText: message.content, lastMessageAt: new Date(message.createdAt), unreadCount: conv.id === selectedConversation?.id ? conv.unreadCount : (conv.unreadCount || 0) + 1 } // Increment unread if not selected
-            : conv
-        );
-        const conversationToMove = updatedConversations.find(conv => conv.id === message.conversationId);
-        if (conversationToMove) {
-          const filtered = updatedConversations.filter(conv => conv.id !== message.conversationId);
-          return [conversationToMove, ...filtered].sort((a, b) => {
-            const dateA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-            const dateB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-            return dateB - dateA;
-          });
-        }
-        return updatedConversations;
-      });
-
-      // Mark as read immediately if the conversation is currently selected and the message is not from current user
-      if (selectedConversation?.id === message.conversationId && message.senderId !== user?.id) {
-          markMessagesAsRead(message.conversationId);
-      }
-    });
-
-    newSocket.on('conversations', (data: { event: string; data: Conversation[] }) => {
-      console.log('ChatContext: Received conversations:', data.data);
-      setConversations(data.data.map(conv => ({
-          ...conv,
-          lastMessageAt: conv.lastMessageAt ? new Date(conv.lastMessageAt) : null,
-          createdAt: new Date(conv.createdAt),
-          updatedAt: new Date(conv.updatedAt),
-      })).sort((a, b) => {
-          const dateA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-          const dateB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-          return dateB - dateA;
-      }));
-      setIsLoadingConversations(false);
-    });
-
-    newSocket.on('newConversation', (conversation: Conversation) => {
-      console.log('ChatContext: Received new conversation:', conversation);
-      setConversations((prev) => {
-        if (prev.some(conv => conv.id === conversation.id)) {
-          return prev;
-        }
-        return [
-          {
-            ...conversation,
-            lastMessageAt: conversation.lastMessageAt ? new Date(conversation.lastMessageAt) : null,
-            createdAt: new Date(conversation.createdAt),
-            updatedAt: new Date(conversation.updatedAt),
-          },
-          ...prev,
-        ].sort((a, b) => {
-            const dateA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-            const dateB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-            return dateB - dateA;
-        });
-      });
-      // Optionally select the new conversation
-      selectConversation(conversation.id);
-    });
-
-    newSocket.on('conversationMessages', (data: { event: string; data: ChatMessage[] }) => {
-      console.log('ChatContext: Received messages for selected conversation:', data.data);
-      setMessages(data.data.map(msg => ({
-          ...msg,
-          createdAt: new Date(msg.createdAt),
-      })));
-      setIsLoadingMessages(false);
-      // After loading messages, mark them as read
-      if (selectedConversation?.id) {
-        markMessagesAsRead(selectedConversation.id);
-      }
-    });
-
-    // Cleanup function for useEffect
     return () => {
       if (socketRef.current) {
-        console.log('ChatContext: Cleaning up socket connection...');
+        console.log('ChatContext: Cleaning up socket connection in useEffect cleanup...');
         socketRef.current.off('connect');
         socketRef.current.off('disconnect');
         socketRef.current.off('connect_error');
         socketRef.current.off('error');
-        socketRef.current.off('message');
-        socketRef.current.off('conversations');
-        socketRef.current.off('newConversation');
-        socketRef.current.off('conversationMessages');
-        socketRef.current.off('messagesRead'); // Ensure this is off too
-        
-        if (socketRef.current === newSocket) {
-             socketRef.current.disconnect();
+        socketRef.current.off('message', handleMessage);
+        socketRef.current.off('conversations', handleConversationsEvent);
+        socketRef.current.off('newConversation', handleNewConversation);
+        socketRef.current.off('conversationMessages', handleConversationMessagesEvent);
+        socketRef.current.off('messagesRead', handleMessagesRead);
+
+        if (socketRef.current === newSocket && newSocket.connected) {
+          console.log('ChatContext: Disconnecting the current active socket during cleanup.');
+          newSocket.disconnect();
+        } else if (socketRef.current !== newSocket) {
+          console.log('ChatContext: Socket in ref is not the one created in this effect, skipping disconnect.');
+        } else if (!newSocket.connected) {
+          console.log('ChatContext: Socket already disconnected, skipping disconnect during cleanup.');
         }
         socketRef.current = null;
         setSocket(null);
+        isSocketConnectedAndAuthenticatedRef.current = false;
         setConnectionStatus('disconnected');
       }
     };
-  }, [isAuthenticated, accessToken, user?.id, isAuthLoading]); // Dependencies
+  }, [
+    isAuthenticated,
+    accessToken,
+    user?.id,
+    isAuthLoading,
+    handleMessage,
+    handleConversationsEvent,
+    handleNewConversation,
+    handleConversationMessagesEvent,
+    handleMessagesRead
+  ]);
 
-  // Effect to refetch messages when selectedConversation changes
   useEffect(() => {
-    if (socketRef.current && selectedConversation?.id && isAuthenticated && socketRef.current.connected) {
+    console.log('ChatContext: useEffect for selectedConversationId change. Current ID:', selectedConversationId);
+    if (socketRef.current && selectedConversationId && isAuthenticated && socketRef.current.connected) {
+      console.log('ChatContext: setIsLoadingMessages(true) due to selectedConversationId change. Emitting `getConversationMessages`.');
       setIsLoadingMessages(true);
-      socketRef.current.emit('getConversationMessages', { conversationId: selectedConversation.id });
+      socketRef.current.emit('getConversationMessages', { conversationId: selectedConversationId });
     } else {
+      console.log('ChatContext: selectedConversationId cleared or not connected, clearing messages array.');
       setMessages([]);
+      setIsLoadingMessages(false);
     }
-  }, [selectedConversation?.id, isAuthenticated]);
+  }, [selectedConversationId, isAuthenticated, socket]);
 
   const refetchConversations = useCallback(() => {
+    console.log('ChatContext: `refetchConversations` called.');
     if (socketRef.current && isAuthenticated && socketRef.current.connected) {
+      console.log('ChatContext: setIsLoadingConversations(true) for refetch. Emitting `getConversations`.');
       setIsLoadingConversations(true);
       socketRef.current.emit('getConversations');
     } else {
       console.warn('ChatContext: Cannot refetch conversations: Socket not connected or not authenticated.');
+      toast({
+        title: 'Chat Offline',
+        description: 'Cannot refetch conversations. You are currently offline.',
+        variant: 'info'
+      });
     }
   }, [isAuthenticated]);
 
   const refetchMessages = useCallback((conversationId: string) => {
+    console.log(`ChatContext: 'refetchMessages' called for conversation: ${conversationId}`);
     if (socketRef.current && isAuthenticated && socketRef.current.connected) {
+      console.log('ChatContext: setIsLoadingMessages(true) for refetch. Emitting `getConversationMessages`.');
       setIsLoadingMessages(true);
       socketRef.current.emit('getConversationMessages', { conversationId });
     } else {
       console.warn('ChatContext: Cannot refetch messages: Socket not connected or not authenticated.');
+      toast({
+        title: 'Chat Offline',
+        description: 'Cannot refetch messages. You are currently offline.',
+        variant: 'info'
+      });
     }
   }, [isAuthenticated]);
 
   const selectConversation = useCallback((conversationId: string | null) => {
+    console.log(`ChatContext: 'selectConversation' called with ID: ${conversationId}`);
+    setSelectedConversationId(conversationId);
+
     if (conversationId) {
-      const conv = conversations.find(c => c.id === conversationId);
-      if (conv) {
-        setSelectedConversation(conv);
-        // Clear unread count when selected
-        setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unreadCount: 0 } : c));
-      } else {
-        setSelectedConversation(null);
-        setMessages([]);
-        setError('Conversation not found in list.');
-      }
-    } else {
-      setSelectedConversation(null);
-      setMessages([]);
+        // Optimistically update unreadCount to 0 for the selected conversation
+        setConversations(prev => prev.map(c => {
+          if (c.id === conversationId) {
+            const updatedMessageStatuses = c.messageStatuses?.map(ms =>
+              ms.userId === user?.id ? { ...ms, unreadCount: 0 } : ms
+            ) || [];
+            return { ...c, unreadCount: 0, messageStatuses: updatedMessageStatuses };
+          }
+          return c;
+        }));
     }
-  }, [conversations]);
+  }, [user?.id]); // Dependency on user?.id for messageStatuses update
 
   const sendMessage = useCallback(async (conversationId: string, content: string) => {
-    if (socketRef.current && isAuthenticated && socketRef.current.connected && user) {
-      setIsSendingMessage(true); // Set sending state to true
-
-      // Optimistic update: Add message to local state immediately
-      const tempMessageId = `temp-${Date.now()}-${Math.random()}`; // Temporary ID
-      const newMessage: ChatMessage = {
-        id: tempMessageId,
-        conversationId,
-        senderId: user.id,
-        sender: { id: user.id, name: user.name, email: user.email }, // Use user data from AuthContext
-        content,
-        createdAt: new Date(),
-        status: 'sent', // Initial status
-      };
-      setMessages((prevMessages) => [...prevMessages, newMessage]);
-
-      try {
-        // Emit the message to the server
-        socketRef.current.emit('sendMessage', { conversationId, content, tempMessageId });
-        // The server will respond with the actual message, which will update the status/ID
-      } catch (err) {
-        console.error('Failed to send message:', err);
-        setError('Failed to send message.');
-        toast({
-          title: 'Message Send Failed',
-          description: 'Could not send your message. Please try again.',
-          variant: 'destructive',
-        });
-        // Revert optimistic update or mark as failed if needed
-        setMessages((prevMessages) => prevMessages.filter(msg => msg.id !== tempMessageId));
-      } finally {
-        setIsSendingMessage(false); // Reset sending state
-      }
-    } else {
+    console.log(`ChatContext: 'sendMessage' called for conversation ${conversationId}. Content length: ${content.length}`);
+    if (!socketRef.current || !isAuthenticated || !socketRef.current.connected || !user || !content.trim()) {
+      const reason = !socketRef.current ? 'no socket' : !isAuthenticated ? 'not authenticated' : !socketRef.current.connected ? 'socket disconnected' : !user ? 'no user' : !content.trim() ? 'empty content' : 'unknown';
+      console.warn(`ChatContext: Cannot send message. Reason: ${reason}`);
       toast({
-        title: 'Chat Error',
-        description: 'Not connected to chat server. Please refresh or log in.',
+        title: 'Message Not Sent',
+        description: 'Not connected to chat server, not authenticated, or message is empty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    console.log('ChatContext: setIsSendingMessage(true)');
+    setIsSendingMessage(true);
+
+    const tempMessageId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const newMessage: Message = { // ⭐ Changed to Message ⭐
+      id: tempMessageId,
+      conversationId,
+      senderId: user.id,
+      sender: { id: user.id, name: user.name || 'You', email: user.email || '' },
+      content: content.trim(),
+      createdAt: new Date(),
+      tempMessageId: tempMessageId, // Include temp ID for matching
+    };
+
+    setMessages((prevMessages) => {
+      console.log('ChatContext: Adding temporary message to state:', newMessage.id);
+      return [...prevMessages, newMessage].sort((a,b) => a.createdAt.getTime() - b.createdAt.getTime());
+    });
+
+    try {
+      console.log(`ChatContext: Emitting 'sendMessage' with tempId: ${tempMessageId}`);
+      socketRef.current.emit('sendMessage', { conversationId, content: content.trim(), tempMessageId });
+    } catch (err) {
+      console.error('ChatContext: Failed to send message:', err);
+      setError('Failed to send message.');
+      toast({
+        title: 'Message Send Failed',
+        description: 'Could not send your message. Please try again.',
+        variant: 'destructive',
+      });
+      setMessages((prevMessages) => {
+        console.log('ChatContext: Removing temporary message from state due to send failure:', tempMessageId);
+        return prevMessages.filter(msg => msg.id !== tempMessageId)
+      });
+    } finally {
+      console.log('ChatContext: setIsSendingMessage(false) in finally block.');
+      setIsSendingMessage(false);
+    }
+  }, [isAuthenticated, user]);
+
+
+  const createConversation = useCallback(async (participantIds: string[], title?: string) => {
+    console.log(`ChatContext: 'createConversation' called with participants: ${participantIds.join(', ')} and title: ${title}`);
+    if (!socketRef.current || !isAuthenticated || !socketRef.current.connected || !user) {
+      console.warn('ChatContext: Cannot create conversation: Socket not connected or not authenticated.');
+      toast({
+        title: 'Conversation Creation Failed',
+        description: 'Not connected to chat server or not authenticated.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      console.log('ChatContext: Emitting `createConversation` event.');
+      socketRef.current.emit('createConversation', { participantIds, title: title?.trim() });
+    } catch (err) {
+      console.error('ChatContext: Failed to create conversation:', err);
+      setError('Failed to create conversation.');
+      toast({
+        title: 'Conversation Creation Failed',
+        description: 'Could not create new conversation. Please try again.',
         variant: 'destructive',
       });
     }
   }, [isAuthenticated, user]);
 
 
-  const createConversation = useCallback(async (participantIds: string[], title?: string) => {
-    if (socketRef.current && isAuthenticated && socketRef.current.connected) {
-      try {
-        // The server will emit 'newConversation' on success
-        socketRef.current.emit('createConversation', { participantIds, title });
-      } catch (err) {
-        console.error('Failed to create conversation:', err);
-        setError('Failed to create conversation.');
-        toast({
-          title: 'Conversation Creation Failed',
-          description: 'Could not create new conversation. Please try again.',
-          variant: 'destructive',
-        });
-      }
-    } else {
-      toast({
-        title: 'Chat Error',
-        description: 'Not connected to chat server. Please refresh or log in.',
-        variant: 'destructive',
-      });
-    }
-  }, [isAuthenticated]);
-
-
-  const markMessagesAsRead = useCallback((conversationId: string) => {
-    if (socketRef.current && socketRef.current.connected) {
-      console.log(`ChatContext: Marking messages as read for conversation: ${conversationId}`);
-      socketRef.current.emit('markMessagesAsRead', { conversationId });
-      // Optimistically clear unread count for the selected conversation in the UI
-      setConversations(prevConversations =>
-        prevConversations.map(conv =>
-          conv.id === conversationId ? { ...conv, unreadCount: 0 } : conv
-        )
-      );
-    }
-  }, []);
-
-  // Listener for messagesRead event from the server
-  useEffect(() => {
-    if (socket) {
-      const handleMessagesRead = (data: { conversationId: string; userId: string }) => {
-        console.log(`ChatContext: Messages in conversation ${data.conversationId} read by ${data.userId}`);
-        // Update message statuses to 'read' for messages sent by the current user in that conversation
-        if (data.userId !== user?.id && selectedConversation?.id === data.conversationId) { // Only update if another user read messages in current conversation
-            setMessages(prevMessages =>
-                prevMessages.map(msg =>
-                    msg.conversationId === data.conversationId && msg.senderId === user?.id && msg.status !== 'read'
-                        ? { ...msg, status: 'read' }
-                        : msg
-                )
-            );
-        }
-      };
-      socket.on('messagesRead', handleMessagesRead);
-      return () => {
-        socket.off('messagesRead', handleMessagesRead);
-      };
-    }
-  }, [socket, user?.id, selectedConversation]);
-
-
-  const contextValue = useMemo(() => ({
-    socket,
-    conversations,
-    selectedConversation,
-    messages,
-    isLoadingConversations,
-    isLoadingMessages,
-    isSendingMessage,
-    connectionStatus,
-    error,
-    selectConversation,
-    sendMessage,
-    createConversation,
-    refetchConversations,
-    refetchMessages,
-    markMessagesAsRead,
-  }), [
+  const contextValue = useMemo(() => {
+    console.log('ChatContext: Recalculating contextValue.');
+    return {
+      socket,
+      conversations,
+      selectedConversation,
+      messages,
+      isLoadingConversations,
+      isLoadingMessages,
+      isSendingMessage,
+      connectionStatus,
+      error,
+      selectConversation,
+      sendMessage,
+      createConversation,
+      refetchConversations,
+      refetchMessages,
+      markMessagesAsRead,
+    };
+  }, [
     socket,
     conversations,
     selectedConversation,

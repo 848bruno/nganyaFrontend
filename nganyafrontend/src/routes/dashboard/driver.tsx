@@ -139,7 +139,7 @@ function InnerDriverDashboard({
         driverRidesData.data.filter((ride) => ride.status === 'pending'),
       );
       const activeRide = driverRidesData.data.find(
-        (ride) => ride.status === 'active' || ride.status === 'enRouteToPickup', // Include enRouteToPickup as active
+        (ride) => ride.status === 'active' || ride.status === 'enRouteToPickup', 
       );
       if (activeRide) {
         setCurrentRide(activeRide);

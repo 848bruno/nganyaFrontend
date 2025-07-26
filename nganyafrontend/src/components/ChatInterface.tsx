@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Users, MessageSquare, Send, X, Plus, Loader2, ChevronLeft, Badge } from 'lucide-react';
+import { MessageSquare, Send, X, Plus, Loader2, ChevronLeft, Badge } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Dialog,
@@ -47,13 +47,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
   const [newMessage, setNewMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showNewConversationModal, setShowNewConversationModal] = useState(false);
-  const [newConversationParticipants, setNewConversationParticipants] = useState<string[]>([]);
-  const [newConversationTitle, setNewConversationTitle] = useState('');
+  const [newConversationRecipientId, setNewConversationRecipientId] = useState<string | null>(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const { data: allUsersData, isLoading: isLoadingAllUsers } = useUsers(1, 1000);
 
   const selectableUsers = useMemo(() => {
+    // Users available to start a NEW chat with. Current user should not be in this list.
     return (allUsersData?.data || []).filter(u => u.id !== currentUser?.id);
   }, [allUsersData, currentUser]);
 
@@ -63,50 +63,84 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
 
   useEffect(() => {
     if (selectedConversation?.id) {
+      console.log('ChatInterface: Marking messages as read for conversation:', selectedConversation.id);
       markMessagesAsRead(selectedConversation.id);
     }
   }, [selectedConversation?.id, markMessagesAsRead]);
 
   const handleSendMessage = async () => {
     if (selectedConversation && newMessage.trim()) {
+      console.log('ChatInterface: Attempting to send message to conversation:', selectedConversation.id);
       await sendMessage(selectedConversation.id, newMessage.trim());
       setNewMessage('');
+    } else {
+      console.warn('ChatInterface: Cannot send message. No selected conversation or empty message.');
     }
   };
 
   const handleCreateConversation = async () => {
-    if (newConversationParticipants.length > 0) {
+    if (newConversationRecipientId && currentUser?.id) {
+      console.log('ChatInterface: Attempting to create new one-on-one conversation with recipient:', newConversationRecipientId);
       try {
-        const participantsToSend = currentUser?.id
-            ? Array.from(new Set([...newConversationParticipants, currentUser.id]))
-            : newConversationParticipants;
-
-        await createConversation(participantsToSend, newConversationTitle.trim() || undefined);
+        // Backend should handle creation of one-on-one.
+        // We send the recipient ID, and the backend adds the current user.
+        await createConversation([newConversationRecipientId]); // Assuming createConversation takes an array of participant IDs
+        console.log('ChatInterface: Direct conversation creation initiated.');
         setShowNewConversationModal(false);
-        setNewConversationParticipants([]);
-        setNewConversationTitle('');
+        setNewConversationRecipientId(null); // Reset for next time
       } catch (err) {
-        console.error('Error creating conversation:', err);
+        console.error('ChatInterface: Error creating direct conversation:', err);
       }
+    } else {
+      console.warn('ChatInterface: Cannot create direct conversation, no recipient selected or current user missing.');
     }
   };
 
+  // Helper to get a participant's name by ID
   const getParticipantName = useCallback((participantId: string) => {
     const participant = allUsersData?.data?.find(u => u.id === participantId);
-    return participant ? participant.name : 'Unknown User';
+    return participant ? participant.name : 'Unknown User'; // Fallback for specific participant
   }, [allUsersData]);
 
+  // Determines the display title for a conversation, strictly for direct chats with another user
   const getConversationTitle = useCallback((conv: Conversation) => {
-    if (conv.title) return conv.title;
+    // Log for debugging purposes
+    console.group(`getConversationTitle for conv.id: ${conv.id}`);
+    console.log('  Conversation object received:', conv);
+    console.log('  Current user ID:', currentUser?.id);
+    console.log('  Conversation participants:', conv.participants);
+
+    // Filter out the current user from the participants
     const otherParticipants = conv.participants.filter(p => p.id !== currentUser?.id);
+
     if (otherParticipants.length === 1) {
-      return getParticipantName(otherParticipants[0].id);
+      // This is the ideal scenario for a direct chat: exactly one other participant
+      const name = getParticipantName(otherParticipants[0].id);
+      console.log(`  Returning other participant's name: ${name}`);
+      console.groupEnd();
+      return name;
+    } else if (otherParticipants.length === 0 && conv.participants.length === 1 && conv.participants[0]?.id === currentUser?.id) {
+      // If only current user is a participant, and we don't want to show 'My Notes',
+      // this conversation should ideally not even be in the 'conversations' list from the backend.
+      // However, if it is, we fall back to a generic name or filter it out.
+      console.warn('  Warning: Encountered a self-chat. This conversation should be filtered out or handled differently if self-chats are not desired.');
+      console.groupEnd();
+      return 'Self Chat (Not Displayed)'; // This case implies backend sending unwanted convs
+    } else if (otherParticipants.length > 1) {
+      // This case means it's a "group" chat.
+      // Since we are doing away with group chats on the frontend, this is a fallback
+      // that indicates the backend might be sending group conversations, or there's
+      // an unexpected number of participants for a "direct" chat.
+      const names = otherParticipants.map(p => getParticipantName(p.id)).join(', ');
+      console.warn(`  Warning: Conversation has more than one 'other' participant. This should not happen for direct chats. Participants: ${names}`);
+      console.groupEnd();
+      return `Multi-User Chat: ${names}`; // Indicate it's not a simple direct chat
     }
-    if (otherParticipants.length > 1) {
-      const names = otherParticipants.map(p => getParticipantName(p.id));
-      return names.length > 2 ? `${names[0]}, ${names[1]} +${names.length - 2}` : names.join(', ');
-    }
-    return 'My Notes';
+
+    // Final fallback if participants array is missing, empty, or unexpected
+    console.error('  Conversation has no valid participants to determine a direct chat name. Returning generic fallback.');
+    console.groupEnd();
+    return 'Unknown User'; // Generic fallback for truly malformed data
   }, [currentUser, getParticipantName]);
 
   const formatMessageTimestamp = useCallback((date: Date) => {
@@ -128,9 +162,29 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
     return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundType=gradientLinear`;
   };
 
-  if (!isOpen) return null;
+  // Determine the display name for the header of the currently selected chat
+  const currentChatHeaderTitle = useMemo(() => {
+    if (!selectedConversation) return 'Chat'; // Default if no conversation is selected
+    return getConversationTitle(selectedConversation);
+  }, [selectedConversation, getConversationTitle]);
 
-  const isGroupChat = selectedConversation && selectedConversation.participants.length > 2;
+  // Filter conversations to only show direct chats (2 participants, one is current user, one is other)
+  // Or, if your backend already filters out self-chats/groups, this filter might be redundant but safe.
+  const filteredConversations = useMemo(() => {
+    if (!currentUser) return [];
+    return conversations.filter(conv => {
+      // A valid direct chat must have exactly two participants
+      // and one of them must be the current user, and the other must not be the current user.
+      const otherParticipants = conv.participants.filter(p => p.id !== currentUser.id);
+      const isSelfChat = conv.participants.length === 1 && conv.participants[0]?.id === currentUser.id;
+
+      // Exclude self-chats and any conversations with more than one 'other' participant (i.e., groups)
+      return otherParticipants.length === 1 && !isSelfChat;
+    });
+  }, [conversations, currentUser]);
+
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4 font-sans">
@@ -144,12 +198,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                 variant="ghost"
                 size="icon"
                 className="md:hidden"
-                onClick={() => setIsMobileSidebarOpen(true)}
+                onClick={() => {
+                  setIsMobileSidebarOpen(true);
+                  selectConversation(null); // Deselect conversation to show list on mobile
+                }}
               >
                 <ChevronLeft className="h-5 w-5" />
               </Button>
             )}
-            <h2 className="text-xl font-semibold">Chat</h2>
+            <h2 className="text-xl font-semibold">{currentChatHeaderTitle}</h2>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={connectionStatus === 'connected' ? 'default' : (connectionStatus === 'connecting' ? 'secondary' : 'destructive')}>
@@ -180,7 +237,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                 className="h-8 gap-1"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">New</span>
+                <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">New Chat</span>
               </Button>
             </div>
             <ScrollArea className="flex-1">
@@ -188,15 +245,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                 <div className="flex flex-col items-center justify-center h-full p-4">
                   <Loader2 className="h-6 w-6 animate-spin mb-2" />
                   <span>Loading conversations...</span>
+                  <p className="text-sm text-muted-foreground">Status: {connectionStatus}</p>
                 </div>
               ) : error ? (
                 <div className="text-center text-destructive p-4">{error}</div>
-              ) : conversations.length === 0 ? (
+              ) : filteredConversations.length === 0 ? (
                 <div className="text-center text-muted-foreground p-4">
-                  No conversations yet. Start a new one!
+                  No direct conversations yet. Start a new one!
                 </div>
               ) : (
-                conversations.map((conv) => (
+                filteredConversations.map((conv) => (
                   <button
                     key={conv.id}
                     onClick={() => {
@@ -262,8 +320,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                         {getConversationTitle(selectedConversation)}
                       </h3>
                       <p className="text-sm text-muted-foreground">
-                        {selectedConversation.participants.length} participant
-                        {selectedConversation.participants.length !== 1 ? 's' : ''}
+                         Direct Chat
                       </p>
                     </div>
                   </div>
@@ -275,6 +332,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                       <div className="flex flex-col items-center justify-center h-full">
                         <Loader2 className="h-6 w-6 animate-spin mb-2" />
                         <span>Loading messages...</span>
+                        <p className="text-sm text-muted-foreground">Current Conversation ID: {selectedConversation.id}</p>
                       </div>
                     ) : messages.length === 0 ? (
                       <div className="flex flex-1 flex-col items-center justify-center text-center">
@@ -285,9 +343,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                         </p>
                       </div>
                     ) : (
-                      messages.map((msg) => { // Changed to use explicit return for clarity
+                      messages.map((msg) => {
                         const isCurrentUser = msg.senderId === currentUser?.id;
-                        const showSenderName = isGroupChat && !isCurrentUser;
 
                         return (
                           <div
@@ -305,11 +362,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                                   : 'bg-muted rounded-xl rounded-bl-none'
                               )}
                             >
-                              {showSenderName && (
-                                <div className="mb-1 text-sm font-medium text-blue-600">
-                                  {getParticipantName(msg.sender.id)}
-                                </div>
-                              )}
                               <div className="whitespace-pre-wrap break-words">
                                 {msg.content}
                               </div>
@@ -337,7 +389,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                             </div>
                           </div>
                         );
-                      }) // Correctly closed map with explicit return
+                      })
                     )}
                     <div ref={messagesEndRef} />
                   </div>
@@ -381,7 +433,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                   Select an existing conversation or start a new one
                 </p>
                 <Button onClick={() => setShowNewConversationModal(true)}>
-                  <Plus className="h-4 w-4 mr-2" /> New Conversation
+                  <Plus className="h-4 w-4 mr-2" /> New Direct Chat
                 </Button>
               </div>
             )}
@@ -389,34 +441,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
         </div>
       </div>
 
-      {/* New Conversation Modal */}
+      {/* New Conversation Modal (for direct chat only) */}
       <Dialog open={showNewConversationModal} onOpenChange={setShowNewConversationModal}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>New Conversation</DialogTitle>
+            <DialogTitle>Start New Direct Chat</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="title">Title (Optional)</Label>
-              <Input
-                id="title"
-                value={newConversationTitle}
-                onChange={(e) => setNewConversationTitle(e.target.value)}
-                placeholder="Group project chat"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="participants">Participants</Label>
+              <Label htmlFor="recipient">Recipient</Label>
               <Select
-                onValueChange={(value) => {
-                  if (!newConversationParticipants.includes(value)) {
-                    setNewConversationParticipants((prev) => [...prev, value]);
-                  }
-                }}
-                value=""
+                onValueChange={(value) => setNewConversationRecipientId(value)}
+                value={newConversationRecipientId || ""}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select participants..." />
+                  <SelectValue placeholder="Select a user..." />
                 </SelectTrigger>
                 <SelectContent>
                   {isLoadingAllUsers ? (
@@ -426,14 +465,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                     </div>
                   ) : selectableUsers.length === 0 ? (
                     <div className="p-2 text-sm text-muted-foreground">
-                      No other users available
+                      No other users available to chat with.
                     </div>
                   ) : (
                     selectableUsers.map((user) => (
                       <SelectItem
                         key={user.id}
                         value={user.id}
-                        disabled={newConversationParticipants.includes(user.id)}
+                        disabled={newConversationRecipientId === user.id}
                       >
                         <div className="flex items-center gap-2">
                           <Avatar className="h-6 w-6">
@@ -450,50 +489,43 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ isOpen, onClose })
                 </SelectContent>
               </Select>
             </div>
-            {newConversationParticipants.length > 0 && (
+            {newConversationRecipientId && (
               <div className="flex flex-wrap gap-2">
-                {newConversationParticipants.map((pId) => {
-                  const user = allUsersData?.data?.find(u => u.id === pId);
-                  return (
-                    <Badge
-                      key={pId}
-                      variant="outline"
-                      className="flex items-center gap-1 pr-1.5"
-                    >
-                      <Avatar className="h-4 w-4">
-                        <AvatarImage src={user ? getAvatarUrl(user.name) : ''} />
-                        <AvatarFallback>
-                          {user?.name ? user.name.substring(0, 2).toUpperCase() : '?'}
-                        </AvatarFallback>
-                      </Avatar>
-                      {user?.name || 'Unknown'}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 p-0 hover:bg-transparent"
-                        onClick={() =>
-                          setNewConversationParticipants((prev) =>
-                            prev.filter((id) => id !== pId)
-                          )
-                        }
-                      >
-                        <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                      </Button>
-                    </Badge>
-                  );
-                })}
+                <Badge
+                  variant="outline"
+                  className="flex items-center gap-1 pr-1.5"
+                >
+                  <Avatar className="h-4 w-4">
+                    <AvatarImage src={getAvatarUrl(getParticipantName(newConversationRecipientId))} />
+                    <AvatarFallback>
+                      {getParticipantName(newConversationRecipientId).substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  {getParticipantName(newConversationRecipientId)}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 p-0 hover:bg-transparent"
+                    onClick={() => setNewConversationRecipientId(null)}
+                  >
+                    <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                  </Button>
+                </Badge>
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewConversationModal(false)}>
+            <Button variant="outline" onClick={() => {
+              setShowNewConversationModal(false);
+              setNewConversationRecipientId(null);
+            }}>
               Cancel
             </Button>
             <Button
               onClick={handleCreateConversation}
-              disabled={newConversationParticipants.length === 0}
+              disabled={!newConversationRecipientId}
             >
-              Create
+              Start Chat
             </Button>
           </DialogFooter>
         </DialogContent>

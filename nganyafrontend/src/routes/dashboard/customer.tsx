@@ -3,7 +3,8 @@ import { MapView } from '@/components/MapView'
 import { BookingPanel } from '@/components/BookingPanel'
 import { DashboardSidebar } from '@/components/dashboard-sidebar'
 import { ChatInterface } from '@/components/ChatInterface'
-import { ChatProvider, useChat } from '@/contexts/ChatContext'
+// Removed ChatProvider from import, keeping useChat
+import { useChat } from '@/contexts/ChatContext'
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import React, { useState, useEffect, useCallback } from 'react'
 import { rideshareService } from '@/lib/dashboard-service'
@@ -42,9 +43,9 @@ interface RouteDataForSettingState {
   destinationLat: number
   destinationLng: number
   geometry: { type: string; coordinates: [number, number][] }
-  distance: number
-  duration: number
-  instructions: any[]
+  distance?: number
+  duration?: number
+  instructions?: any[]
 }
 
 export const Route = createFileRoute('/dashboard/customer')({
@@ -302,15 +303,14 @@ export function CustomerDashboard() {
   }, [routeSearch, fullRouteData, handleSetRouteData, isCalculatingRouteOnLoad])
 
   return (
-    <ChatProvider>
-      <CustomerDashboardContent
-        handleSetRouteData={handleSetRouteData}
-        fullRouteData={fullRouteData}
-        isCalculatingRouteOnLoad={isCalculatingRouteOnLoad}
-        routeSearch={routeSearch}
-        isChatOpen={isChatOpen}
-        setIsChatOpen={setIsChatOpen}
-      />
-    </ChatProvider>
+    // ChatProvider removed from here. It should be in a higher-level authenticated layout component.
+    <CustomerDashboardContent
+      handleSetRouteData={handleSetRouteData}
+      fullRouteData={fullRouteData}
+      isCalculatingRouteOnLoad={isCalculatingRouteOnLoad}
+      routeSearch={routeSearch}
+      isChatOpen={isChatOpen}
+      setIsChatOpen={setIsChatOpen}
+    />
   )
 }

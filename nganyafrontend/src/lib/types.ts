@@ -293,6 +293,7 @@ export interface CreateUserRequest {
   phone: string;
   role: UserRole; // Using UserRole enum
   driverLicenseNumber?: string; // Only for creating a driver
+  passengerCount:string;
 }
 
 export interface UserResponseDto {
